@@ -8,7 +8,7 @@ from langchain_core.tools import tool, BaseTool
 def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_corpora: Path) -> List[BaseTool]:
     @tool
     def list_paths(relative_path: str) -> List[str]:
-        """List paths under corpora matching a glob pattern (e.g. '**/*.txt')."""
+        """List paths under corpora matching a glob pattern (e.g. '**/*.txt', '*.html')."""
         return [str(path) for path in path_to_corpora.rglob(relative_path)]
 
     @tool
