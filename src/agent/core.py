@@ -1,4 +1,5 @@
 import argparse
+import os
 import time
 from enum import Enum
 from pathlib import Path
@@ -103,7 +104,14 @@ class AgentRole(Enum):
     EXAMINEE = "examinee"
     EXAMINER = "examiner"
 
-def initialize_agent(llm_model: str, role: Literal[AgentRole.EXAMINEE, AgentRole.EXAMINER], path_to_corpora: Path) -> CompiledStateGraph:
+def initialize_agent(
+        llm_model: str,
+        role: Literal[AgentRole.EXAMINEE, AgentRole.EXAMINER],
+        path_to_corpora: Path,
+        temperature: float,
+        num_ctx: int,
+        time_limit: int,
+) -> CompiledStateGraph:
     """Construct an AgentExecutor wired to the provided RAG pipeline."""
     if role not in AgentRole:
         raise ValueError(f"Invalid role: {role}")
@@ -127,7 +135,8 @@ def initialize_agent(llm_model: str, role: Literal[AgentRole.EXAMINEE, AgentRole
         model=llm_model,
         reasoning=False,
         base_url="http://localhost:11434",
-        temperature=0
+        temperature=temperature,
+        num_ctx=num_ctx,
     )
 
     return create_agent(
@@ -147,7 +156,18 @@ def parse_args():
 
 def main():
     args = parse_args()
-    agent = initialize_agent(args.model, AgentRole.EXAMINEE, Path("."))
+    path_to_corpora = args.path_to_corpora
+    if not os.path.exists(path_to_corpora):
+        raise ValueError(f"Path to corpora does not exist: {path_to_corpora}")
+
+    agent = initialize_agent(
+        llm_model=args.model,
+        role=AgentRole.EXAMINEE,
+        path_to_corpora=Path(path_to_corpora),
+        temperature=0,
+        num_ctx=4096,
+        time_limit=60,
+    )
     result = agent.invoke({"messages": [{"role": "user", "content": f"{args.prompt}"}]}, print_mode="values")
     print(result)
 
