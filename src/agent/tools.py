@@ -5,7 +5,7 @@ from typing import List
 from langchain_core.tools import tool, BaseTool
 
 
-def create_performer_tools(start_time_stamp: int, time_limit: int, path_to_corpora: Path) -> List[BaseTool]:
+def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_corpora: Path) -> List[BaseTool]:
     @tool
     def list_paths(relative_path: str) -> List[str]:
         """List paths under corpora matching a glob pattern (e.g. '**/*.txt')."""
@@ -43,7 +43,7 @@ def create_performer_tools(start_time_stamp: int, time_limit: int, path_to_corpo
     @tool
     def time_left() -> int:
         """Return seconds remaining until time limit is reached."""
-        return time_limit - int(time.time()) - start_time_stamp
+        return time_limit_s - int(time.time()) - start_time_stamp
 
     return [list_paths, read_file, search, file_meta, time_elapsed, time_left]
 

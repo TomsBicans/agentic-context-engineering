@@ -112,7 +112,7 @@ def initialize_agent(llm_model: str, role: Literal[AgentRole.EXAMINEE, AgentRole
         system_message = EXAMINEE_SYSTEM_MESSAGE
         tools = create_performer_tools(
             start_time_stamp=int(time.time()),
-            time_limit=60,
+            time_limit_s=time_limit,
             path_to_corpora=path_to_corpora
         )
     elif role == AgentRole.EXAMINER:
