@@ -9,7 +9,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class PerformerTools:
     list_paths: BaseTool
-    read_file: BaseTool
+    read_lines: BaseTool
     search: BaseTool
     file_meta: BaseTool
     time_elapsed: BaseTool
@@ -18,7 +18,7 @@ class PerformerTools:
     def as_list(self) -> List[BaseTool]:
         return [
             self.list_paths,
-            self.read_file,
+            self.read_lines,
             self.search,
             self.file_meta,
             self.time_elapsed,
@@ -36,6 +36,10 @@ class ValidatorTools:
         ]
 
 
+def clamp(value: int, min_value: int, max_value: int) -> int:
+    return max(min_value, min(value, max_value))
+
+
 def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_corpora: Path) -> PerformerTools:
     @tool
     def list_paths(pattern: str) -> List[str]:
@@ -46,17 +50,50 @@ def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_cor
         ]
 
     @tool
-    def read_file(relative_path: str) -> str:
-        """Read a text file (relative to corpora root) and return its contents."""
-        if not path_to_corpora.joinpath(relative_path).exists():
+    def read_lines(relative_path: str, a: int, b: int) -> str:
+        """Read lines [a:b] (0-based, end-exclusive) from a text file under corpora root.
+        Output is bounded to avoid blowing up the LLM context."""
+        path = path_to_corpora.joinpath(relative_path)
+        if not path.exists():
             return f"Error: File {relative_path} does not exist in the corpora."
+
+        # basic validation
+        if a < 0 or b < 0:
+            return "Error: line indices must be non-negative."
+        if b <= a:
+            return "Error: invalid range (b must be > a)."
+
+        MAX_LINES_PER_READ = 80
+        MAX_CHARS_PER_READ = 12_000
+
+        # Enforce window size: b <= a + MAX_LINES_PER_READ
+        b = min(b, a + MAX_LINES_PER_READ)
+
         try:
-            return path_to_corpora.joinpath(relative_path).read_text(encoding="utf-8")
+            text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
-            return path_to_corpora.joinpath(relative_path).read_text(
-                encoding="utf-8",
-                errors="replace",
-            )
+            text = path.read_text(encoding="utf-8", errors="replace")
+
+        lines = text.splitlines()
+        n = len(lines)
+        if n == 0:
+            return f"[file: {relative_path}] (empty file)"
+
+        # Clamp to file bounds (b can be == n)
+        a = clamp(a, 0, n)
+        b = clamp(b, 0, n)
+
+        if b <= a:
+            return f"Error: requested range is empty after clamping (file has {n} lines)."
+
+        chunk = "\n".join(lines[a:b])
+
+        # clamp output chars (protect against gigantic text lines)
+        if len(chunk) > MAX_CHARS_PER_READ:
+            chunk = chunk[:MAX_CHARS_PER_READ] + "\n...[truncated]"
+
+        # include a small header so the model 'knows' what it’s seeing
+        return f"[file: {relative_path}, lines:{a}-{b}]\n{chunk}"
 
     @tool
     def search(relative_path: str, pattern: str) -> str:
@@ -114,7 +151,7 @@ def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_cor
 
     return PerformerTools(
         list_paths=list_paths,
-        read_file=read_file,
+        read_lines=read_lines,
         search=search,
         file_meta=file_meta,
         time_elapsed=time_elapsed,
