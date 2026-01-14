@@ -214,6 +214,7 @@ def main():
         return response
 
     response = invoke_agent(agent, args.prompt)
+    print()
     print(response)
     return response
 
