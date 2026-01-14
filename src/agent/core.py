@@ -136,7 +136,6 @@ def initialize_agent(
         time_limit: int,
         enforce_tools: bool,
 ) -> CompiledStateGraph:
-    """Construct an AgentExecutor wired to the provided RAG pipeline."""
     if role not in AgentRole:
         raise ValueError(f"Invalid role: {role}")
 
