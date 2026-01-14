@@ -49,6 +49,14 @@ Failure modes to avoid
 - Hallucinated facts or sources.
 - Vague references (“some file says…”).
 - Overclaiming beyond what the cited lines actually state.
+
+""".strip()
+
+TOOL_USE_ENFORCEMENT = """
+Tool-use enforcement (MANDATORY)
+- You MUST call at least one of: list_paths(), search(), or read_file() before answering.
+- Do NOT answer or claim "not found" until you have called a tool.
+- If a tool fails, report the error and try another tool call if possible.
 """.strip()
 
 EXAMINER_SYSTEM_MESSAGE = """
@@ -113,6 +121,7 @@ def initialize_agent(
         temperature: float,
         num_ctx: int,
         time_limit: int,
+        enforce_tools: bool,
 ) -> CompiledStateGraph:
     """Construct an AgentExecutor wired to the provided RAG pipeline."""
     if role not in AgentRole:
@@ -120,6 +129,8 @@ def initialize_agent(
 
     if role == AgentRole.EXAMINEE:
         system_message = EXAMINEE_SYSTEM_MESSAGE
+        if enforce_tools:
+            system_message = f"{EXAMINEE_SYSTEM_MESSAGE}\n\n{TOOL_USE_ENFORCEMENT}"
         tools = create_performer_tools(
             start_time_stamp=int(time.time()),
             time_limit_s=time_limit,
@@ -155,6 +166,9 @@ def parse_args():
     parser.add_argument("--num_ctx", type=int, default=8192, required=True)
     parser.add_argument("--role", type=str, choices=[AgentRole.EXAMINEE.value, AgentRole.EXAMINER.value], required=True)
     parser.add_argument("--path-to-corpora", type=str, help="Absolute path to a directory on the operating system")
+    parser.add_argument("--require-tools", dest="require_tools", action="store_true")
+    parser.add_argument("--no-require-tools", dest="require_tools", action="store_false")
+    parser.set_defaults(require_tools=True)
     parser.add_argument("--stream", dest="stream", action="store_true")
     parser.add_argument("--no-stream", dest="stream", action="store_false")
     parser.set_defaults(stream=True)
@@ -174,9 +188,16 @@ def main():
         temperature=0.03,
         num_ctx=args.num_ctx,
         time_limit=60,
+        enforce_tools=args.require_tools,
     )
     if args.stream:
-        return stream_agent(agent, args.prompt)
+        content, tool_calls_seen = stream_agent(agent, args.prompt)
+        if args.require_tools and tool_calls_seen == 0:
+            raise RuntimeError("Tool use is required but no tool calls were made.")
+        return content
+
+    if args.require_tools:
+        raise ValueError("--require-tools requires streaming; run without --no-stream.")
 
     result = agent.invoke({"messages": [{"role": "user", "content": f"{args.prompt}"}]}, print_mode="values")
     content = result["messages"][-1].content
