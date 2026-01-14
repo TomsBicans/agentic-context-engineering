@@ -21,7 +21,7 @@ q="how many Extreme trans-Neptunian objects are there?"
 q="What is the Sun's mass?"
 q="Where can i find the list of minor planets?"
 q="What is the Earth's mass?"
-q="How many commets are in the solar system?"
+q="How many comets are in the solar system?"
 
 ctx=2048
 ctx=4096
