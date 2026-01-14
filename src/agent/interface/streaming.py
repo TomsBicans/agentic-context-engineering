@@ -1,8 +1,10 @@
 import sys
 import time
-from typing import Tuple
 from langchain_core.messages import AIMessage, ToolMessage, AIMessageChunk
 from langgraph.graph.state import CompiledStateGraph
+
+from src.agent.interface.invoke import invoke_agent
+from src.agent.interface.response import AgentResponse
 
 
 def log_status(start_time: float, message: str) -> None:
@@ -21,24 +23,28 @@ def format_tool_call(tool_call) -> str:
     return f"{name}({args})"
 
 
-def stream_agent(agent: CompiledStateGraph, prompt: str) -> Tuple[str, int]:
+def stream_agent(agent: CompiledStateGraph, prompt: str) -> AgentResponse:
     start_time = time.time()
     if not hasattr(agent, "stream"):
         log_status(start_time, "stream not available; falling back to invoke")
-        result = agent.invoke({"messages": [{"role": "user", "content": prompt}]}, print_mode="values")
-        content = result["messages"][-1].content
-        print(content)
-        return content, 0
+        response = invoke_agent(agent, prompt)
+        return response
 
     log_status(start_time, "starting agent stream")
 
     final_content = ""
     tool_calls_seen = 0
-    for event in agent.stream({"messages": [{"role": "user", "content": prompt}]}, stream_mode="messages"):
-        if isinstance(event, tuple):
-            message = event[0]
+    for mode, chunk in agent.stream({"messages": [{"role": "user", "content": prompt}]},
+                                    stream_mode=["messages", "values"]):
+        if mode == "values":
+            # chunk is the full current state snapshot
+            last_state = chunk
+            continue
+
+        if isinstance(chunk, tuple):
+            message = chunk[0]
         else:
-            message = event
+            message = chunk
 
         if isinstance(message, AIMessage) and message.tool_calls:
             for tool_call in message.tool_calls:
@@ -57,5 +63,18 @@ def stream_agent(agent: CompiledStateGraph, prompt: str) -> Tuple[str, int]:
 
     if final_content:
         print("", flush=True)
+
+    if isinstance(last_state, dict):
+        structured_response = last_state.get("structured_response")
+    else:
+        structured_response = None
+
     log_status(start_time, "done")
-    return final_content, tool_calls_seen
+
+    return AgentResponse(
+        message_content=final_content,
+        tool_messages=tool_calls_seen,
+        structured_response=structured_response,
+        human_messages=0,  # TODO: calculate this somehow
+        ai_messages=0,  # TODO: calculate this somehow
+    )

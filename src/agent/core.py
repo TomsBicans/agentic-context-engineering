@@ -3,12 +3,13 @@ import os
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Tuple, List
 
 from langchain_ollama import ChatOllama
 from langchain.agents import create_agent
 from langgraph.graph.state import CompiledStateGraph
 
+from src.agent.interface.invoke import invoke_agent
 from src.agent.interface.streaming import stream_agent
 from src.agent.tools import create_validator_tools, create_performer_tools
 
@@ -191,18 +192,15 @@ def main():
         enforce_tools=args.require_tools,
     )
     if args.stream:
-        content, tool_calls_seen = stream_agent(agent, args.prompt)
-        if args.require_tools and tool_calls_seen == 0:
+        response = stream_agent(agent, args.prompt)
+        print(response)
+        if args.require_tools and response.tool_messages == 0:
             raise RuntimeError("Tool use is required but no tool calls were made.")
-        return content
+        return response
 
-    if args.require_tools:
-        raise ValueError("--require-tools requires streaming; run without --no-stream.")
-
-    result = agent.invoke({"messages": [{"role": "user", "content": f"{args.prompt}"}]}, print_mode="values")
-    content = result["messages"][-1].content
-    print(content)
-    return content
+    response = invoke_agent(agent, args.prompt)
+    print(response)
+    return response
 
 
 if __name__ == "__main__":
