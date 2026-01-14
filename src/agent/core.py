@@ -9,6 +9,7 @@ from langchain_ollama import ChatOllama
 from langchain.agents import create_agent
 from langgraph.graph.state import CompiledStateGraph
 
+from src.agent.interface.streaming import stream_agent
 from src.agent.tools import create_validator_tools, create_performer_tools
 
 EXAMINEE_SYSTEM_MESSAGE = """
@@ -152,6 +153,9 @@ def parse_args():
     parser.add_argument("--model", type=str, default="qwen3:4b", required=True)
     parser.add_argument("--role", type=str, choices=[AgentRole.EXAMINEE.value, AgentRole.EXAMINER.value], required=True)
     parser.add_argument("--path-to-corpora", type=str, help="Absolute path to a directory on the operating system")
+    parser.add_argument("--stream", dest="stream", action="store_true")
+    parser.add_argument("--no-stream", dest="stream", action="store_false")
+    parser.set_defaults(stream=True)
     return parser.parse_args()
 
 def main():
@@ -168,8 +172,13 @@ def main():
         num_ctx=4096,
         time_limit=60,
     )
+    if args.stream:
+        return stream_agent(agent, args.prompt)
+
     result = agent.invoke({"messages": [{"role": "user", "content": f"{args.prompt}"}]}, print_mode="values")
-    print(result)
+    content = result["messages"][-1].content
+    print(content)
+    return content
 
 if __name__ == "__main__":
     main()
