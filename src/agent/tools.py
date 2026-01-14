@@ -50,7 +50,13 @@ def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_cor
         """Read a text file (relative to corpora root) and return its contents."""
         if not path_to_corpora.joinpath(relative_path).exists():
             return f"Error: File {relative_path} does not exist in the corpora."
-        return path_to_corpora.joinpath(relative_path).read_text()
+        try:
+            return path_to_corpora.joinpath(relative_path).read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            return path_to_corpora.joinpath(relative_path).read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
 
     @tool
     def search(relative_path: str, pattern: str) -> str:
