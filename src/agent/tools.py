@@ -76,7 +76,7 @@ def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_cor
     @tool
     def time_left() -> int:
         """Return seconds remaining until time limit is reached."""
-        return time_limit_s - int(time.time()) - start_time_stamp
+        return time_limit_s - (int(time.time()) - start_time_stamp)
 
     return PerformerTools(
         list_paths=list_paths,
