@@ -5,10 +5,10 @@ from tempfile import TemporaryDirectory
 from src.agent.tools import create_performer_tools, create_validator_tools
 
 
-def test_performer_tools_read_file():
+def test_performer_tools_read_lines():
     with TemporaryDirectory() as tmp_dir:
         root = Path(tmp_dir)
-        text = "Hello, world!"
+        text = "line0\nline1\nline2\nline3\n"
         root.joinpath("file1.txt").write_text(text)
         root.joinpath("file2.txt").write_text(text)
 
@@ -18,11 +18,12 @@ def test_performer_tools_read_file():
             path_to_corpora=root,
         )
 
-        # Test read_file
-        out = tools.read_file.invoke({"relative_path": "file1.txt"})
-        assert out == text
+        out = tools.read_lines.invoke({"relative_path": "file1.txt", "a": 1, "b": 3})
+        assert out.startswith("[file: file1.txt, lines:1-3]")
+        assert "line1" in out
+        assert "line2" in out
 
-        out = tools.read_file.invoke({"relative_path": "file3.txt"})
+        out = tools.read_lines.invoke({"relative_path": "file3.txt", "a": 0, "b": 1})
         assert "error" in str(out).lower()
 
 
