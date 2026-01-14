@@ -161,7 +161,7 @@ def parse_args():
 def main():
     args = parse_args()
     path_to_corpora = args.path_to_corpora
-    if not os.path.exists(path_to_corpora):
+    if not os.path.exists(path_to_corpora) and not Path(path_to_corpora).is_dir():
         raise ValueError(f"Path to corpora does not exist: {path_to_corpora}")
 
     agent = initialize_agent(
