@@ -105,6 +105,7 @@ class AgentRole(Enum):
     EXAMINEE = "examinee"
     EXAMINER = "examiner"
 
+
 def initialize_agent(
         llm_model: str,
         role: Literal[AgentRole.EXAMINEE, AgentRole.EXAMINER],
@@ -158,6 +159,7 @@ def parse_args():
     parser.set_defaults(stream=True)
     return parser.parse_args()
 
+
 def main():
     args = parse_args()
     path_to_corpora = args.path_to_corpora
@@ -179,6 +181,7 @@ def main():
     content = result["messages"][-1].content
     print(content)
     return content
+
 
 if __name__ == "__main__":
     main()
