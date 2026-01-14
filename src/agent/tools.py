@@ -1,4 +1,4 @@
-import argparse
+import re
 import time
 from pathlib import Path
 from typing import List
@@ -66,8 +66,33 @@ def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_cor
         # file: path - relative path to file
         # lines:a-b - lines in file
 
-        # TODO: implement
-        return ""
+        # TODO: Add an actual researched optimal implementation later
+        if not pattern:
+            return "Error: search pattern is empty."
+
+        try:
+            regex = re.compile(pattern)
+        except re.error as exc:
+            return f"Error: invalid regex pattern: {exc}"
+
+        matches = []
+        for path in path_to_corpora.rglob(relative_path):
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(errors="ignore")
+            except OSError:
+                continue
+
+            rel_path = path.relative_to(path_to_corpora).as_posix()
+            for idx, line in enumerate(text.splitlines()):
+                if regex.search(line):
+                    statement = line.strip()
+                    matches.append(f"{statement} [file: {rel_path}, lines:{idx}-{idx + 1}]")
+
+        if not matches:
+            return "No matches found."
+        return "\n".join(matches)
 
     @tool
     def file_meta(relative_path: str) -> str:
