@@ -38,11 +38,11 @@ class ValidatorTools:
 
 def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_corpora: Path) -> PerformerTools:
     @tool
-    def list_paths(relative_path: str) -> List[str]:
+    def list_paths(pattern: str) -> List[str]:
         """List paths under corpora matching a glob pattern (e.g. '**/*.txt', '*.html')."""
         return [
             path.relative_to(path_to_corpora).as_posix()
-            for path in path_to_corpora.rglob(relative_path)
+            for path in path_to_corpora.rglob(pattern)
         ]
 
     @tool
