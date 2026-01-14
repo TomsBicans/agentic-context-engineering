@@ -37,7 +37,10 @@ def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_cor
     @tool
     def list_paths(relative_path: str) -> List[str]:
         """List paths under corpora matching a glob pattern (e.g. '**/*.txt', '*.html')."""
-        return [str(path) for path in path_to_corpora.rglob(relative_path)]
+        return [
+            path.relative_to(path_to_corpora).as_posix()
+            for path in path_to_corpora.rglob(relative_path)
+        ]
 
     @tool
     def read_file(relative_path: str) -> str:
