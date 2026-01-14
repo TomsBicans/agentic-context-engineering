@@ -41,7 +41,7 @@ def test_performer_tools_list_paths_relative():
             path_to_corpora=root,
         )
 
-        out = tools.list_paths.invoke({"relative_path": "**/*.txt"})
+        out = tools.list_paths.invoke({"pattern": "**/*.txt"})
         assert set(out) == {"notes.txt", "subdir/more.txt"}
         assert all(not Path(path).is_absolute() for path in out)
 
