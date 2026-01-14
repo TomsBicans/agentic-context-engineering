@@ -5,9 +5,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Literal, Tuple, List
 
+from langchain.agents.structured_output import ToolStrategy
 from langchain_ollama import ChatOllama
 from langchain.agents import create_agent
 from langgraph.graph.state import CompiledStateGraph
+from pydantic import BaseModel
 
 from src.agent.interface.invoke import invoke_agent
 from src.agent.interface.streaming import stream_agent
@@ -115,6 +117,16 @@ class AgentRole(Enum):
     EXAMINER = "examiner"
 
 
+class Statement(BaseModel):
+    statement: str
+    file_path: str
+    lines: Tuple[int, int]
+
+
+class ExamineeResponse(BaseModel):
+    statements: List[Statement]
+
+
 def initialize_agent(
         llm_model: str,
         role: Literal[AgentRole.EXAMINEE, AgentRole.EXAMINER],
@@ -137,11 +149,13 @@ def initialize_agent(
             time_limit_s=time_limit,
             path_to_corpora=path_to_corpora
         )
+        response_format = ToolStrategy(ExamineeResponse)
     elif role == AgentRole.EXAMINER:
         system_message = EXAMINER_SYSTEM_MESSAGE
         tools = create_validator_tools(
             path_to_corpora=path_to_corpora
         )
+        response_format = None  # TODO: implement
     else:
         raise ValueError(f"Invalid role: {role}")
 
@@ -157,6 +171,7 @@ def initialize_agent(
         model=llm_model,
         tools=tools.as_list(),
         system_prompt=system_message,
+        response_format=response_format,
     )
 
 
