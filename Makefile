@@ -1,4 +1,7 @@
 
+run_tests:
+	py -m pytest -q
+
 
 agent_h:
 	py -m src.agent.core -h

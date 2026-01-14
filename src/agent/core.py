@@ -142,7 +142,7 @@ def initialize_agent(
 
     return create_agent(
         model=llm_model,
-        tools=tools,
+        tools=tools.as_list(),
         system_prompt=system_message,
     )
 

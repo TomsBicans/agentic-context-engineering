@@ -3,9 +3,37 @@ import time
 from pathlib import Path
 from typing import List
 from langchain_core.tools import tool, BaseTool
+from dataclasses import dataclass
 
+@dataclass(frozen=True)
+class PerformerTools:
+    list_paths: BaseTool
+    read_file: BaseTool
+    search: BaseTool
+    file_meta: BaseTool
+    time_elapsed: BaseTool
+    time_left: BaseTool
 
-def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_corpora: Path) -> List[BaseTool]:
+    def as_list(self) -> List[BaseTool]:
+        return [
+            self.list_paths,
+            self.read_file,
+            self.search,
+            self.file_meta,
+            self.time_elapsed,
+            self.time_left,
+        ]
+
+@dataclass(frozen=True)
+class ValidatorTools:
+    resolve_reference: BaseTool
+
+    def as_list(self) -> List[BaseTool]:
+        return [
+            self.resolve_reference,
+        ]
+
+def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_corpora: Path) -> PerformerTools:
     @tool
     def list_paths(relative_path: str) -> List[str]:
         """List paths under corpora matching a glob pattern (e.g. '**/*.txt', '*.html')."""
@@ -19,8 +47,8 @@ def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_cor
         return path_to_corpora.joinpath(relative_path).read_text()
 
     @tool
-    def search(relative_path: str, pattern: str) -> str:
-        """Search for a pattern in matching files and return hits with file + line ranges."""
+    def search(relative_path: str, regex_pattern: str) -> str:
+        """Search for a regex pattern in matching files and return hits with file + line ranges."""
         # Returns response in format '[statement] [file: path, lines:a-b]'
         # statement - text
         # file: path - relative path to file
@@ -47,15 +75,24 @@ def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_cor
         """Return seconds remaining until time limit is reached."""
         return time_limit_s - int(time.time()) - start_time_stamp
 
-    return [list_paths, read_file, search, file_meta, time_elapsed, time_left]
+    return PerformerTools(
+        list_paths=list_paths,
+        read_file=read_file,
+        search=search,
+        file_meta=file_meta,
+        time_elapsed=time_elapsed,
+        time_left=time_left,
+    )
 
 
-def create_validator_tools(path_to_corpora: Path) -> List[BaseTool]:
+def create_validator_tools(path_to_corpora: Path) -> ValidatorTools:
     @tool
     def resolve_reference(relative_path: str, a: int, b: int):
         """Return lines [a:b] (0-based, end-exclusive) from a text file under corpora root."""
         return path_to_corpora.joinpath(relative_path).read_text().splitlines()[a:b]
 
-    return [resolve_reference]
+    return ValidatorTools(
+        resolve_reference=resolve_reference
+    )
 
 
