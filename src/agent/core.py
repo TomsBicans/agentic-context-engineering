@@ -167,9 +167,9 @@ def main():
     agent = initialize_agent(
         llm_model=args.model,
         role=AgentRole.EXAMINEE,
-        path_to_corpora=Path(path_to_corpora),
-        temperature=0,
-        num_ctx=4096,
+        path_to_corpora=Path(path_to_corpora).absolute(),
+        temperature=0.03,
+        num_ctx=8192,
         time_limit=60,
     )
     if args.stream:
