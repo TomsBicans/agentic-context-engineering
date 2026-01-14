@@ -47,8 +47,8 @@ def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_cor
         return path_to_corpora.joinpath(relative_path).read_text()
 
     @tool
-    def search(relative_path: str, regex_pattern: str) -> str:
-        """Search for a regex pattern in matching files and return hits with file + line ranges."""
+    def search(relative_path: str, pattern: str) -> str:
+        """Search for a pattern in matching files and return hits with file + line ranges."""
         # Returns response in format '[statement] [file: path, lines:a-b]'
         # statement - text
         # file: path - relative path to file
