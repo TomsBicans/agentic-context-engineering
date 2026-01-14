@@ -152,6 +152,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("prompt", type=str)
     parser.add_argument("--model", type=str, default="qwen3:4b", required=True)
+    parser.add_argument("--num_ctx", type=int, default=8192, required=True)
     parser.add_argument("--role", type=str, choices=[AgentRole.EXAMINEE.value, AgentRole.EXAMINER.value], required=True)
     parser.add_argument("--path-to-corpora", type=str, help="Absolute path to a directory on the operating system")
     parser.add_argument("--stream", dest="stream", action="store_true")
@@ -171,7 +172,7 @@ def main():
         role=AgentRole.EXAMINEE,
         path_to_corpora=Path(path_to_corpora).absolute(),
         temperature=0.03,
-        num_ctx=8192,
+        num_ctx=args.num_ctx,
         time_limit=60,
     )
     if args.stream:
