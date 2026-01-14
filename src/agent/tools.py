@@ -5,6 +5,7 @@ from typing import List
 from langchain_core.tools import tool, BaseTool
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True)
 class PerformerTools:
     list_paths: BaseTool
@@ -24,6 +25,7 @@ class PerformerTools:
             self.time_left,
         ]
 
+
 @dataclass(frozen=True)
 class ValidatorTools:
     resolve_reference: BaseTool
@@ -32,6 +34,7 @@ class ValidatorTools:
         return [
             self.resolve_reference,
         ]
+
 
 def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_corpora: Path) -> PerformerTools:
     @tool
@@ -97,5 +100,3 @@ def create_validator_tools(path_to_corpora: Path) -> ValidatorTools:
     return ValidatorTools(
         resolve_reference=resolve_reference
     )
-
-
