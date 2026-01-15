@@ -135,6 +135,7 @@ def initialize_agent(
         num_ctx: int,
         time_limit: int,
         enforce_tools: bool,
+        reasoning_enabled: bool,
 ) -> CompiledStateGraph:
     if role not in AgentRole:
         raise ValueError(f"Invalid role: {role}")
@@ -160,7 +161,7 @@ def initialize_agent(
 
     llm_model = ChatOllama(
         model=llm_model,
-        reasoning=False,
+        reasoning=reasoning_enabled,
         base_url="http://localhost:11434",
         temperature=temperature,
         num_ctx=num_ctx,
@@ -187,6 +188,9 @@ def parse_args():
     parser.add_argument("--stream", dest="stream", action="store_true")
     parser.add_argument("--no-stream", dest="stream", action="store_false")
     parser.set_defaults(stream=True)
+    parser.add_argument("--reasoning-enabled", dest="reasoning_enabled", action="store_true")
+    parser.add_argument("--no-reasoning-enabled", dest="reasoning_enabled", action="store_false")
+    parser.set_defaults(reasoning_enabled=False)
     return parser.parse_args()
 
 
@@ -204,6 +208,7 @@ def main():
         num_ctx=args.num_ctx,
         time_limit=60,
         enforce_tools=args.require_tools,
+        reasoning_enabled=args.reasoning_enabled,
     )
     if args.stream:
         response = stream_agent(agent, args.prompt)
