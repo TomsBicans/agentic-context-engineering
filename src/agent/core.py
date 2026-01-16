@@ -12,6 +12,7 @@ from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
 from src.agent.interface.invoke import invoke_agent
+from src.agent.interface.response import format_agent_response
 from src.agent.interface.streaming import stream_agent
 from src.agent.tools import create_validator_tools, create_performer_tools
 
@@ -212,14 +213,16 @@ def main():
     )
     if args.stream:
         response = stream_agent(agent, args.prompt)
-        print(response)
+        formatted_response = format_agent_response(response)
+        print(formatted_response)
         if args.require_tools and response.tool_messages == 0:
             raise RuntimeError("Tool use is required but no tool calls were made.")
         return response
 
     response = invoke_agent(agent, args.prompt)
     print()
-    print(response)
+    formatted_response = format_agent_response(response)
+    print(formatted_response)
     return response
 
 

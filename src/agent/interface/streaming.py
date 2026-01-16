@@ -77,4 +77,5 @@ def stream_agent(agent: CompiledStateGraph, prompt: str) -> AgentResponse:
         structured_response=structured_response,
         human_messages=0,  # TODO: calculate this somehow
         ai_messages=0,  # TODO: calculate this somehow
+        steps=[] # TODO: calculate this somehow
     )
