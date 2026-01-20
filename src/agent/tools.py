@@ -6,6 +6,19 @@ from langchain_core.tools import tool, BaseTool
 from dataclasses import dataclass
 
 
+_XML_TAG_RE = re.compile(r"</?[^>]+>")
+_NON_PRINTABLE_RE = re.compile(r"[^\x09\x0A\x0D\x20-\x7E]")
+_DEFAULT_MAX_SEARCH_MATCHES = 20
+_MAX_SEARCH_MATCHES_LIMIT = 200
+
+
+def remove_xml_tags(text: str) -> str:
+    if not text:
+        return text
+    cleaned = _XML_TAG_RE.sub("", text)
+    return _NON_PRINTABLE_RE.sub("", cleaned)
+
+
 @dataclass(frozen=True)
 class PerformerTools:
     list_paths: BaseTool
@@ -87,6 +100,7 @@ def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_cor
             return f"Error: requested range is empty after clamping (file has {n} lines)."
 
         chunk = "\n".join(lines[a:b])
+        chunk = remove_xml_tags(chunk)
 
         # clamp output chars (protect against gigantic text lines)
         if len(chunk) > MAX_CHARS_PER_READ:
@@ -96,7 +110,7 @@ def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_cor
         return f"[file: {relative_path}, lines:{a}-{b}]\n{chunk}"
 
     @tool
-    def search(relative_path: str, pattern: str) -> str:
+    def search(relative_path: str, pattern: str, max_matches: int = _DEFAULT_MAX_SEARCH_MATCHES) -> str:
         """Search for a pattern in matching files and return hits with file + line ranges."""
         # Returns response in format '[statement] [file: path, lines:a-b]'
         # statement - text
@@ -106,6 +120,9 @@ def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_cor
         # TODO: Add an actual researched optimal implementation later
         if not pattern:
             return "Error: search pattern is empty."
+        if max_matches <= 0:
+            return "Error: max_matches must be a positive integer."
+        max_matches = clamp(max_matches, 1, _MAX_SEARCH_MATCHES_LIMIT)
 
         try:
             regex = re.compile(pattern)
@@ -113,6 +130,7 @@ def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_cor
             return f"Error: invalid regex pattern: {exc}"
 
         matches = []
+        truncated = False
         for path in path_to_corpora.rglob(relative_path):
             if not path.is_file():
                 continue
@@ -124,11 +142,20 @@ def create_performer_tools(start_time_stamp: int, time_limit_s: int, path_to_cor
             rel_path = path.relative_to(path_to_corpora).as_posix()
             for idx, line in enumerate(text.splitlines()):
                 if regex.search(line):
-                    statement = line.strip()
+                    statement = remove_xml_tags(line).strip()
+                    if not statement:
+                        continue
                     matches.append(f"{statement} [file: {rel_path}, lines:{idx}-{idx + 1}]")
+                    if len(matches) >= max_matches:
+                        truncated = True
+                        break
+            if truncated:
+                break
 
         if not matches:
             return "No matches found."
+        if truncated:
+            matches.append(f"...[truncated to {max_matches} matches]")
         return "\n".join(matches)
 
     @tool
