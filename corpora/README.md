@@ -7,7 +7,6 @@ Saved on a browser with `Save as` feature, then put in the corpora directory so 
 ```
 (.venv) PS C:\Users\tomsb\Documents\GIT_REPOS\master-thesis\agentic-context-engineering\corpora> tree /F
 Folder PATH listing for volume OS
-Volume serial number is D07F-6A41
 C:.
 │   README.md
 │
