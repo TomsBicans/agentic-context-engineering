@@ -8,25 +8,11 @@
 
 # Setup guide
 1. Clone this repository
-2. create python virtual environment
+2. create a python virtual environment using `uv` tool
 ```
-python -m venv .venv
+uv sync
 ```
-3. Activate python virtual environment
-On Windows:
-```
-.venv/Scripts/activate
-```
-On Linux (todo: need to validate if this is the real command):
-```
-.venv/scripts/activate
-```
-
-4. Install dependencies
-```
-python -m pip install -r requirements.txt
-```
-5. Launch the agent program
+5. Launch the agent sample program
 ```
 make agent_test
 ```
