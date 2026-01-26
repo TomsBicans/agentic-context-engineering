@@ -219,10 +219,13 @@ def main():
             raise RuntimeError("Tool use is required but no tool calls were made.")
         return response
 
+    t_start = time.perf_counter()
     response = invoke_agent(agent, args.prompt)
+    elapsed = time.perf_counter() - t_start
     print()
     formatted_response = format_agent_response(response)
     print(formatted_response)
+    print(f"Execution time: {elapsed:.3f}s")
     return response
 
 
