@@ -1,10 +1,10 @@
 
 run_tests:
-	py -m pytest -q
+	uv run py -m pytest -q
 
 
 agent_h:
-	py -m src.agent.core -h
+	uv run py -m src.agent.core -h
 
 model=gemma3:4b # no tool call support on Ollama
 model=deepseek-r1:8b # no tool call support on Ollama
@@ -38,13 +38,13 @@ ctx=4096
 ctx=8192
 
 agent_test:
-	py -m src.agent.core ${q} --model ${model} --num_ctx ${ctx} --role examinee --path-to-corpora "./corpora/scraped_data/solar_system_wiki" --no-stream --reasoning-enabled
+	uv run py -m src.agent.core ${q} --model ${model} --num_ctx ${ctx} --role examinee --path-to-corpora "./corpora/scraped_data/solar_system_wiki" --no-stream --reasoning-enabled
 
 agent:
-	py -m src.agent.core
+	uv run py -m src.agent.core
 
 main_h:
-	py -m src.cli.main -h
+	uv run py -m src.cli.main -h
 
 main:
-	py -m src.cli.main
+	uv run py -m src.cli.main
