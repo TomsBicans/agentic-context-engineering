@@ -2,7 +2,7 @@ from typing import List
 
 from langgraph.graph.state import CompiledStateGraph
 
-from src.agent.interface.response import AgentResponse, AIStep, HumanStep, ToolStep, MessageStep, StepType
+from agent.interface.response import AgentResponse, AIStep, HumanStep, ToolStep, MessageStep, StepType
 
 
 def invoke_agent(agent: CompiledStateGraph, prompt: str) -> AgentResponse:

@@ -1,10 +1,13 @@
+# Setup
+install_dependencies:
+	uv sync --all-packages --all-groups
 
 run_tests:
-	uv run py -m pytest -q
+	uv run --package agent py -m pytest -q
 
-
-agent_h:
-	uv run py -m src.agent.core -h
+install_tools:
+	uv tool install ./packages/cli
+	uv tool install ./packages/agent
 
 model=gemma3:4b # no tool call support on Ollama
 model=deepseek-r1:8b # no tool call support on Ollama
@@ -37,14 +40,17 @@ ctx=6144
 ctx=4096
 ctx=8192
 
+agent_h:
+	uv run --package agent py -m agent.core -h
+
 agent_test:
-	uv run py -m src.agent.core ${q} --model ${model} --num_ctx ${ctx} --role examinee --path-to-corpora "./corpora/scraped_data/solar_system_wiki" --no-stream --reasoning-enabled
+	uv run --package agent py -m agent.core ${q} --model ${model} --num_ctx ${ctx} --role examinee --path-to-corpora "./corpora/scraped_data/solar_system_wiki" --no-stream --reasoning-enabled
 
 agent:
-	uv run py -m src.agent.core
+	uv run --package agent py -m agent.core
 
 main_h:
-	uv run py -m src.cli.main -h
+	uv run --package cli py -m cli.main -h
 
 main:
-	uv run py -m src.cli.main
+	uv run --package cli py -m cli.main

@@ -1,0 +1,25 @@
+[project]
+name = "agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "TomsBicans", email = "tomsbicans@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "langchain>=1.2.7",
+    "langchain-ollama>=1.0.1",
+]
+
+[project.scripts]
+agent = "agent.core:main"
+
+[build-system]
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

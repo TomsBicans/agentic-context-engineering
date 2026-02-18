@@ -11,10 +11,10 @@ from langchain.agents import create_agent
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 
-from src.agent.interface.invoke import invoke_agent
-from src.agent.interface.response import format_agent_response
-from src.agent.interface.streaming import stream_agent
-from src.agent.tools import create_validator_tools, create_performer_tools
+from agent.interface.invoke import invoke_agent
+from agent.interface.response import format_agent_response
+from agent.interface.streaming import stream_agent
+from agent.tools import create_validator_tools, create_performer_tools
 
 EXAMINEE_SYSTEM_MESSAGE = """
 You are the Examinee: a tool-using agent answering questions using ONLY the provided local corpus.
