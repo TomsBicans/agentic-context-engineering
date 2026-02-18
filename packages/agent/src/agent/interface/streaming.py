@@ -3,8 +3,8 @@ import time
 from langchain_core.messages import AIMessage, ToolMessage, AIMessageChunk
 from langgraph.graph.state import CompiledStateGraph
 
-from src.agent.interface.invoke import invoke_agent
-from src.agent.interface.response import AgentResponse
+from agent.interface.invoke import invoke_agent
+from agent.interface.response import AgentResponse
 
 
 def log_status(start_time: float, message: str) -> None:

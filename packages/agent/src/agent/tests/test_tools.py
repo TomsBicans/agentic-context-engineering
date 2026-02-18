@@ -2,7 +2,7 @@ import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from src.agent.tools import create_performer_tools, create_validator_tools
+from agent.tools import create_performer_tools, create_validator_tools
 
 
 def test_performer_tools_read_lines():
