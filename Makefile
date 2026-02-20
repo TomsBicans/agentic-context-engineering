@@ -9,6 +9,13 @@ install_tools:
 	uv tool install ./packages/cli
 	uv tool install ./packages/agent
 
+
+corpus_scraper_h:
+	uv run --package corpus_scraper py -m corpus_scraper.main -h
+
+corpus_scraper:
+	uv run --package corpus_scraper py -m corpus_scraper.main
+
 model=gemma3:4b # no tool call support on Ollama
 model=deepseek-r1:8b # no tool call support on Ollama
 model=deepseek-r1:14b # no tool call support on Ollama
