@@ -84,6 +84,18 @@ def _add_common_options(parser: argparse.ArgumentParser) -> None:
         help="Deduplicate content",
     )
     parser.add_argument(
+        "--text-format",
+        choices=["plain", "markdown"],
+        default="plain",
+        help="Text output format",
+    )
+    parser.add_argument(
+        "--markdown-converter",
+        choices=["none", "pandoc"],
+        default="none",
+        help="Converter used when --text-format markdown",
+    )
+    parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         default="INFO",
@@ -179,6 +191,8 @@ def _common_config_kwargs(args: argparse.Namespace) -> dict:
         "store_outlinks": args.store_outlinks,
         "compress": args.compress,
         "deduplicate_content": args.deduplicate_content,
+        "text_format": args.text_format,
+        "markdown_converter": args.markdown_converter,
         "log_level": args.log_level,
         "dry_run": args.dry_run,
     }
@@ -259,9 +273,11 @@ def _run_list_http(job: ScrapeJob, corpus_dir: Path, manifest_path: Path) -> Non
         "CORPUS_DEDUPLICATE_CONTENT": config.deduplicate_content,
         "CORPUS_DIR": str(corpus_dir),
         "CORPUS_MANIFEST_PATH": str(manifest_path),
+        "CORPUS_MARKDOWN_CONVERTER": config.markdown_converter,
         "CORPUS_STORE_OUTLINKS": config.store_outlinks,
         "CORPUS_STORE_RAW": config.store_raw,
         "CORPUS_STORE_TEXT": config.store_text,
+        "CORPUS_TEXT_FORMAT": config.text_format,
         "DOWNLOAD_DELAY": config.download_delay,
         "DOWNLOAD_TIMEOUT": config.timeout,
         "ITEM_PIPELINES": {
@@ -305,6 +321,9 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(1) from exc
     except OSError as exc:
         sys.stderr.write(f"filesystem error: {exc}\n")
+        raise SystemExit(1) from exc
+    except RuntimeError as exc:
+        sys.stderr.write(f"runtime error: {exc}\n")
         raise SystemExit(1) from exc
 
     sys.stdout.write(job_to_json(job) + "\n")

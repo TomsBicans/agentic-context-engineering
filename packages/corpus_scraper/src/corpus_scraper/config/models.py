@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 FetcherType = Literal["http", "playwright", "mediawiki"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
+TextFormat = Literal["plain", "markdown"]
+MarkdownConverter = Literal["none", "pandoc"]
 
 
 class CommonConfig(BaseModel):
@@ -27,6 +29,8 @@ class CommonConfig(BaseModel):
     store_outlinks: bool = True
     compress: bool = False
     deduplicate_content: bool = True
+    text_format: TextFormat = "plain"
+    markdown_converter: MarkdownConverter = "none"
     log_level: LogLevel = "INFO"
     dry_run: bool = False
 
@@ -64,6 +68,12 @@ class CommonConfig(BaseModel):
         if value is not None and value <= 0:
             raise ValueError("time-limit must be > 0")
         return value
+
+    @model_validator(mode="after")
+    def validate_text_conversion(self) -> "CommonConfig":
+        if self.markdown_converter == "pandoc" and self.text_format != "markdown":
+            raise ValueError("markdown-converter=pandoc requires --text-format markdown")
+        return self
 
 
 class CrawlConfig(CommonConfig):

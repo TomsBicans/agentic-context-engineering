@@ -1,10 +1,12 @@
 import json
+import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
 from corpus_scraper.main import main
+from corpus_scraper.pipelines.manifest import ListHttpManifestPipeline
 
 
 def test_help_runs(capsys: pytest.CaptureFixture[str]) -> None:
@@ -140,6 +142,30 @@ def test_mediawiki_requires_scope(tmp_path, capsys: pytest.CaptureFixture[str]) 
     assert "mediawiki requires" in err
 
 
+def test_pandoc_requires_markdown_text_format(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+    output_dir = tmp_path / "corpora"
+    input_file = tmp_path / "urls.txt"
+    input_file.write_text("https://example.com\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as excinfo:
+        main(
+            [
+                "list",
+                "--output-dir",
+                str(output_dir),
+                "--corpus-name",
+                "demo",
+                "--input-file",
+                str(input_file),
+                "--markdown-converter",
+                "pandoc",
+                "--dry-run",
+            ]
+        )
+    assert excinfo.value.code == 1
+    err = capsys.readouterr().err
+    assert "requires --text-format markdown" in err
+
+
 def test_writes_stub_artifacts(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
     output_dir = tmp_path / "corpora"
     main(
@@ -246,3 +272,48 @@ def test_list_http_ingestion_writes_manifest_and_artifacts(
     assert (corpus_dir / entry["raw_path"]).exists()
     assert (corpus_dir / entry["text_path"]).exists()
     assert (corpus_dir / entry["outlinks_path"]).exists()
+
+
+def test_pipeline_markdown_with_pandoc(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_pandoc(*args, **kwargs):
+        assert args[0] == ["pandoc", "--from", "html", "--to", "gfm"]
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="# Solar System\n\nMass and orbit.\n",
+        )
+
+    monkeypatch.setattr("corpus_scraper.pipelines.manifest.subprocess.run", fake_pandoc)
+
+    corpus_dir = tmp_path / "solar_md"
+    manifest_path = corpus_dir / "manifest.jsonl"
+    pipeline = ListHttpManifestPipeline(
+        corpus_dir=corpus_dir,
+        manifest_path=manifest_path,
+        store_raw=True,
+        store_text=True,
+        store_outlinks=True,
+        compress=False,
+        deduplicate_content=True,
+        text_format="markdown",
+        markdown_converter="pandoc",
+    )
+    pipeline.open_spider()
+    pipeline.process_item(
+        {
+            "content_bytes": b"<html><body><h1>Solar System</h1><p>Mass and orbit.</p></body></html>",
+            "content_type": "text/html; charset=utf-8",
+            "error": None,
+            "index": 0,
+            "outlinks": ["https://en.wikipedia.org/wiki/Planet"],
+            "status_code": 200,
+            "text": "Solar System\nMass and orbit.",
+            "url": "https://en.wikipedia.org/wiki/Solar_System",
+        }
+    )
+    pipeline.close_spider()
+
+    entry = json.loads(manifest_path.read_text(encoding="utf-8").strip().splitlines()[0])
+    assert entry["text_path"].endswith(".md")
+    markdown_text = (corpus_dir / entry["text_path"]).read_text(encoding="utf-8")
+    assert "# Solar System" in markdown_text

@@ -31,7 +31,20 @@ List (explicit URL file):
 uv run --package corpus_scraper py -m corpus_scraper.main list \
   --output-dir ./corpora/scraped_data \
   --corpus-name demo \
-  --input-file ./urls.txt
+  --input-file ./urls.txt \
+  --store-text
+```
+
+List with Markdown conversion via Pandoc:
+
+```bash
+uv run --package corpus_scraper py -m corpus_scraper.main list \
+  --output-dir ./corpora/scraped_data \
+  --corpus-name solar_system_markdown \
+  --input-file ./urls.txt \
+  --store-text \
+  --text-format markdown \
+  --markdown-converter pandoc
 ```
 
 Repo (git repo file listing):
@@ -67,3 +80,8 @@ When execution writes artifacts, output structure is:
 - `<output-dir>/<corpus-name>/outlinks/` (if `--store-outlinks`)
 
 Use `--dry-run` to skip writing files.
+
+Text conversion options:
+- `--text-format plain|markdown` (default `plain`)
+- `--markdown-converter none|pandoc` (default `none`)
+- `pandoc` converter requires `--text-format markdown` and a `pandoc` binary in `PATH`

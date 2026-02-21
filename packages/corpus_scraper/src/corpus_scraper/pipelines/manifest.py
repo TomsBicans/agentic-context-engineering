@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 from typing import Any
 
 from scrapy.crawler import Crawler
@@ -20,6 +21,8 @@ class ListHttpManifestPipeline:
         store_outlinks: bool,
         compress: bool,
         deduplicate_content: bool,
+        text_format: str,
+        markdown_converter: str,
     ) -> None:
         self.corpus_dir = corpus_dir
         self.manifest_path = manifest_path
@@ -28,6 +31,8 @@ class ListHttpManifestPipeline:
         self.store_outlinks = store_outlinks
         self.compress = compress
         self.deduplicate_content = deduplicate_content
+        self.text_format = text_format
+        self.markdown_converter = markdown_converter
         self.seen_hashes: dict[str, int] = {}
         self.raw_dir = corpus_dir / "raw"
         self.text_dir = corpus_dir / "text"
@@ -44,7 +49,28 @@ class ListHttpManifestPipeline:
             store_outlinks=settings.getbool("CORPUS_STORE_OUTLINKS"),
             compress=settings.getbool("CORPUS_COMPRESS"),
             deduplicate_content=settings.getbool("CORPUS_DEDUPLICATE_CONTENT"),
+            text_format=settings.get("CORPUS_TEXT_FORMAT", "plain"),
+            markdown_converter=settings.get("CORPUS_MARKDOWN_CONVERTER", "none"),
         )
+
+    def _to_markdown(self, content_bytes: bytes) -> str:
+        html = content_bytes.decode("utf-8", errors="replace")
+        if self.markdown_converter == "pandoc":
+            try:
+                result = subprocess.run(
+                    ["pandoc", "--from", "html", "--to", "gfm"],
+                    input=html,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+            except FileNotFoundError as exc:
+                raise RuntimeError("pandoc is not installed or not in PATH") from exc
+            except subprocess.CalledProcessError as exc:
+                stderr = (exc.stderr or "").strip()
+                raise RuntimeError(f"pandoc conversion failed: {stderr}") from exc
+            return result.stdout
+        raise RuntimeError(f"unsupported markdown converter: {self.markdown_converter}")
 
     def open_spider(self, _spider=None) -> None:
         if self.store_raw:
@@ -97,8 +123,18 @@ class ListHttpManifestPipeline:
             entry["raw_path"] = raw_path.relative_to(self.corpus_dir).as_posix()
 
         if self.store_text:
-            text_payload = (str(item.get("text", "")) + "\n").encode("utf-8")
-            text_path = write_payload(self.text_dir / f"{slug}.txt", text_payload, self.compress)
+            if self.text_format == "markdown":
+                text_value = self._to_markdown(content_bytes)
+                text_extension = ".md"
+            else:
+                text_value = str(item.get("text", ""))
+                text_extension = ".txt"
+            text_payload = (text_value + "\n").encode("utf-8")
+            text_path = write_payload(
+                self.text_dir / f"{slug}{text_extension}",
+                text_payload,
+                self.compress,
+            )
             entry["text_path"] = text_path.relative_to(self.corpus_dir).as_posix()
 
         if self.store_outlinks:

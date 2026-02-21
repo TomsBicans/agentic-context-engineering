@@ -29,7 +29,9 @@ corpus_scraper_solar_system:
 		--corpus-name ${SOLAR_SYSTEM_CORPUS_NAME} \
 		--input-file ${SOLAR_SYSTEM_URLS_FILE} \
 		--fetcher http \
-		--store-text
+		--store-text \
+		--text-format markdown \
+		--markdown-converter pandoc
 
 model=gemma3:4b # no tool call support on Ollama
 model=deepseek-r1:8b # no tool call support on Ollama
