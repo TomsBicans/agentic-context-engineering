@@ -133,6 +133,21 @@ wheels = [
 name = "corpus-scraper"
 version = "0.1.0"
 source = { editable = "packages/corpus_scraper" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "h11"
