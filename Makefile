@@ -1,9 +1,11 @@
+PYTHON := python3
+
 # Setup
 install_dependencies:
 	uv sync --all-packages --all-groups
 
 run_tests:
-	uv run --package agent py -m pytest -q
+	uv run --package agent ${PYTHON} -m pytest -q
 
 install_tools:
 	uv tool install ./packages/cli
@@ -11,10 +13,11 @@ install_tools:
 
 
 corpus_scraper_h:
-	uv run --package corpus_scraper py -m corpus_scraper.main -h
+	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main -h
 
 corpus_scraper:
 	uv run --package corpus_scraper py -m corpus_scraper.main
+	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main crawl -h
 
 model=gemma3:4b # no tool call support on Ollama
 model=deepseek-r1:8b # no tool call support on Ollama
@@ -48,16 +51,16 @@ ctx=4096
 ctx=8192
 
 agent_h:
-	uv run --package agent py -m agent.core -h
+	uv run --package agent ${PYTHON} -m agent.core -h
 
 agent_test:
-	uv run --package agent py -m agent.core ${q} --model ${model} --num_ctx ${ctx} --role examinee --path-to-corpora "./corpora/scraped_data/solar_system_wiki" --no-stream --reasoning-enabled
+	uv run --package agent ${PYTHON} -m agent.core ${q} --model ${model} --num_ctx ${ctx} --role examinee --path-to-corpora "./corpora/scraped_data/solar_system_wiki" --no-stream --reasoning-enabled
 
 agent:
-	uv run --package agent py -m agent.core
+	uv run --package agent ${PYTHON} -m agent.core
 
 main_h:
-	uv run --package cli py -m cli.main -h
+	uv run --package cli ${PYTHON} -m cli.main -h
 
 main:
-	uv run --package cli py -m cli.main
+	uv run --package cli ${PYTHON} -m cli.main
