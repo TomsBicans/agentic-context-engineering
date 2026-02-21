@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 
 from pydantic import ValidationError
+from scrapy.crawler import CrawlerProcess
 
 from corpus_scraper.config import (
     CrawlConfig,
@@ -15,6 +16,7 @@ from corpus_scraper.config import (
     format_validation_error,
     job_to_json,
 )
+from corpus_scraper.spiders.list_spider import ListSpider
 
 
 def _add_common_options(parser: argparse.ArgumentParser) -> None:
@@ -233,6 +235,52 @@ def _job_paths(job: ScrapeJob) -> tuple[Path, Path, Path]:
     )
 
 
+def _read_url_list(config: ListConfig) -> list[str]:
+    lines = Path(config.input_file).read_text(encoding="utf-8").splitlines()
+    urls: list[str] = []
+    for line in lines:
+        value = line.strip()
+        if config.skip_empty and not value:
+            continue
+        if value:
+            urls.append(value)
+    return urls
+
+
+def _run_list_http(job: ScrapeJob, corpus_dir: Path, manifest_path: Path) -> None:
+    config = job.config
+    if not isinstance(config, ListConfig):
+        raise ValueError("list runner requires ListConfig")
+
+    urls = _read_url_list(config)
+    settings: dict[str, object] = {
+        "CONCURRENT_REQUESTS": config.concurrency,
+        "CORPUS_COMPRESS": config.compress,
+        "CORPUS_DEDUPLICATE_CONTENT": config.deduplicate_content,
+        "CORPUS_DIR": str(corpus_dir),
+        "CORPUS_MANIFEST_PATH": str(manifest_path),
+        "CORPUS_STORE_OUTLINKS": config.store_outlinks,
+        "CORPUS_STORE_RAW": config.store_raw,
+        "CORPUS_STORE_TEXT": config.store_text,
+        "DOWNLOAD_DELAY": config.download_delay,
+        "DOWNLOAD_TIMEOUT": config.timeout,
+        "ITEM_PIPELINES": {
+            "corpus_scraper.pipelines.manifest.ListHttpManifestPipeline": 300,
+        },
+        "LOG_ENABLED": False,
+    }
+
+    if config.user_agent:
+        settings["USER_AGENT"] = config.user_agent
+    if config.time_limit is not None:
+        settings["CLOSESPIDER_TIMEOUT"] = config.time_limit
+        settings["CORPUS_TIME_LIMIT"] = config.time_limit
+
+    process = CrawlerProcess(settings=settings)
+    process.crawl(ListSpider, urls=urls, page_limit=config.page_limit)
+    process.start(stop_after_crawl=True, install_signal_handlers=False)
+
+
 def run_job(job: ScrapeJob) -> None:
     corpus_dir, config_path, manifest_path = _job_paths(job)
 
@@ -241,8 +289,10 @@ def run_job(job: ScrapeJob) -> None:
 
     corpus_dir.mkdir(parents=True, exist_ok=True)
     config_path.write_text(job_to_json(job) + "\n", encoding="utf-8")
-    # Manifest stays empty until discovery/fetching is wired in.
     manifest_path.write_text("", encoding="utf-8")
+
+    if job.mode == "list" and job.config.fetcher == "http":
+        _run_list_http(job, corpus_dir, manifest_path)
 
 
 def main(argv: list[str] | None = None) -> None:
