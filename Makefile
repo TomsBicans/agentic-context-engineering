@@ -19,6 +19,18 @@ corpus_scraper:
 	uv run --package corpus_scraper py -m corpus_scraper.main
 	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main crawl -h
 
+CORPORA_OUTPUT_DIR := ./corpora/scraped_data
+SOLAR_SYSTEM_URLS_FILE := ./corpora/seed_urls/solar_system_wiki.txt
+SOLAR_SYSTEM_CORPUS_NAME := solar_system_wiki
+
+corpus_scraper_solar_system:
+	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main list \
+		--output-dir ${CORPORA_OUTPUT_DIR} \
+		--corpus-name ${SOLAR_SYSTEM_CORPUS_NAME} \
+		--input-file ${SOLAR_SYSTEM_URLS_FILE} \
+		--fetcher http \
+		--store-text
+
 model=gemma3:4b # no tool call support on Ollama
 model=deepseek-r1:8b # no tool call support on Ollama
 model=deepseek-r1:14b # no tool call support on Ollama
