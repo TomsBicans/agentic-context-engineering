@@ -6,9 +6,24 @@ from pathlib import Path
 import subprocess
 from typing import Any
 
+from bs4 import BeautifulSoup
 from scrapy.crawler import Crawler
 
 from corpus_scraper.pipelines.storage import write_payload
+
+_BOILERPLATE_SELECTORS = (
+    "script",
+    "style",
+    "noscript",
+    "#mw-aria-live-region",
+    ".mw-jump-link",
+    "header",
+    "footer",
+    "nav",
+)
+_PRESERVED_ATTRS = {"href", "src", "alt", "title"}
+_VECTOR_DROP_TAGS = {"header", "footer", "nav", "aside"}
+_VECTOR_UNWRAP_TAGS = {"div", "section"}
 
 
 class ListHttpManifestPipeline:
@@ -53,13 +68,68 @@ class ListHttpManifestPipeline:
             markdown_converter=settings.get("CORPUS_MARKDOWN_CONVERTER", "none"),
         )
 
+    def _prune_html_for_llm(self, html: str) -> str:
+        soup = BeautifulSoup(html, "html.parser")
+
+        for selector in _BOILERPLATE_SELECTORS:
+            for node in soup.select(selector):
+                node.decompose()
+
+        for node in list(soup.find_all(True)):
+            if getattr(node, "attrs", None) is None:
+                continue
+
+            class_names = node.get("class") or []
+            if node.name in _VECTOR_DROP_TAGS and any(
+                str(class_name).startswith("vector-") for class_name in class_names
+            ):
+                node.decompose()
+                continue
+            if node.name in _VECTOR_UNWRAP_TAGS and any(
+                str(class_name).startswith("vector-") for class_name in class_names
+            ):
+                node.unwrap()
+                continue
+
+            node_id = node.get("id")
+            if (
+                node.name in _VECTOR_DROP_TAGS
+                and isinstance(node_id, str)
+                and node_id.startswith("vector-")
+            ):
+                node.decompose()
+                continue
+            if (
+                node.name in _VECTOR_UNWRAP_TAGS
+                and isinstance(node_id, str)
+                and node_id.startswith("vector-")
+            ):
+                node.unwrap()
+                continue
+
+            if getattr(node, "attrs", None) is None:
+                continue
+
+            for attr in list(node.attrs):
+                if attr in _PRESERVED_ATTRS:
+                    continue
+                if (
+                    attr in {"class", "id", "style"}
+                    or attr.startswith("aria-")
+                    or attr.startswith("data-")
+                ):
+                    del node.attrs[attr]
+
+        return str(soup)
+
     def _to_markdown(self, content_bytes: bytes) -> str:
         html = content_bytes.decode("utf-8", errors="replace")
+        clean_html = self._prune_html_for_llm(html)
         if self.markdown_converter == "pandoc":
             try:
                 result = subprocess.run(
                     ["pandoc", "--from", "html", "--to", "gfm"],
-                    input=html,
+                    input=clean_html,
                     capture_output=True,
                     text=True,
                     check=True,

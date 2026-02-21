@@ -277,6 +277,11 @@ def test_list_http_ingestion_writes_manifest_and_artifacts(
 def test_pipeline_markdown_with_pandoc(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_pandoc(*args, **kwargs):
         assert args[0] == ["pandoc", "--from", "html", "--to", "gfm"]
+        pruned_html = kwargs["input"]
+        assert "vector-header-container" not in pruned_html
+        assert "mw-jump-link" not in pruned_html
+        assert "mw-aria-live-region" not in pruned_html
+        assert "Solar System" in pruned_html
         return subprocess.CompletedProcess(
             args=args[0],
             returncode=0,
@@ -301,7 +306,14 @@ def test_pipeline_markdown_with_pandoc(tmp_path, monkeypatch: pytest.MonkeyPatch
     pipeline.open_spider()
     pipeline.process_item(
         {
-            "content_bytes": b"<html><body><h1>Solar System</h1><p>Mass and orbit.</p></body></html>",
+            "content_bytes": (
+                b"<html><body>"
+                b"<div id='mw-aria-live-region'>status updates</div>"
+                b"<a class='mw-jump-link' href='#content'>Jump to content</a>"
+                b"<div class='vector-header-container'>Header chrome</div>"
+                b"<h1>Solar System</h1><p>Mass and orbit.</p>"
+                b"</body></html>"
+            ),
             "content_type": "text/html; charset=utf-8",
             "error": None,
             "index": 0,
