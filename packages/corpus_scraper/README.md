@@ -1,6 +1,6 @@
 # corpus-scraper
 
-Generic corpus scraper CLI. For now it only validates CLI arguments, builds a config object, and prints it as pretty JSON for reproducibility.
+Generic corpus scraper CLI. It validates CLI arguments, builds a config object, prints it as pretty JSON, and writes stub run artifacts to disk.
 
 ## Usage
 
@@ -51,4 +51,9 @@ uv run --package corpus_scraper py -m corpus_scraper.main mediawiki \
   --category "Machine learning"
 ```
 
-Each command prints the parsed configuration as deterministic JSON. Crawling/fetching is not implemented yet.
+Each command prints the parsed configuration as deterministic JSON and writes:
+
+- `<output-dir>/<corpus-name>/config.json`
+- `<output-dir>/<corpus-name>/manifest.jsonl` (empty placeholder)
+
+Use `--dry-run` to skip writing files. Crawling/fetching is not implemented yet.

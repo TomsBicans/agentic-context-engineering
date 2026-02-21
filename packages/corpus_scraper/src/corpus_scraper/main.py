@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import sys
 
 from pydantic import ValidationError
@@ -223,12 +224,37 @@ def _build_job(args: argparse.Namespace) -> ScrapeJob:
     return ScrapeJob(mode=args.mode, config=config)
 
 
+def _job_paths(job: ScrapeJob) -> tuple[Path, Path, Path]:
+    corpus_dir = Path(job.config.output_dir) / job.config.corpus_name
+    return (
+        corpus_dir,
+        corpus_dir / "config.json",
+        corpus_dir / "manifest.jsonl",
+    )
+
+
+def run_job(job: ScrapeJob) -> None:
+    corpus_dir, config_path, manifest_path = _job_paths(job)
+
+    if job.config.dry_run:
+        return
+
+    corpus_dir.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(job_to_json(job) + "\n", encoding="utf-8")
+    # Manifest stays empty until discovery/fetching is wired in.
+    manifest_path.write_text("", encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     try:
         job = _build_job(args)
+        run_job(job)
     except ValidationError as exc:
         sys.stderr.write(format_validation_error(exc) + "\n")
+        raise SystemExit(1) from exc
+    except OSError as exc:
+        sys.stderr.write(f"filesystem error: {exc}\n")
         raise SystemExit(1) from exc
 
     sys.stdout.write(job_to_json(job) + "\n")
