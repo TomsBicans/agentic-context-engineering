@@ -28,6 +28,9 @@ SOLAR_SYSTEM_URLS_FILE := ./corpora/seed_urls/solar_system_wiki.txt
 SOLAR_SYSTEM_CORPUS_NAME := solar_system_wiki
 SOLAR_SYSTEM_START_URL := https://en.wikipedia.org/wiki/Solar_System
 SOLAR_SYSTEM_ALLOWED_DOMAIN := en.wikipedia.org
+OBLIVION_CORPUS_NAME := oblivion_wiki
+OBLIVION_START_URL := https://en.uesp.net/wiki/Oblivion:Oblivion
+OBLIVION_ALLOWED_DOMAIN := en.uesp.net
 
 corpus_scraper_solar_system:
 	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main crawl \
@@ -40,7 +43,23 @@ corpus_scraper_solar_system:
 		--download-delay 0.75 \
 		--store-text \
 		--text-format markdown \
-		--markdown-converter pandoc
+		--markdown-converter pandoc \
+		--log-level INFO
+
+corpus_scraper_oblivion:
+	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main crawl \
+		--output-dir ${CORPORA_OUTPUT_DIR} \
+		--corpus-name ${OBLIVION_CORPUS_NAME} \
+		--start-url ${OBLIVION_START_URL} \
+		--allowed-domain ${OBLIVION_ALLOWED_DOMAIN} \
+		--page-limit 500 \
+		--download-delay 1.0 \
+		--allow-pattern '/wiki/Oblivion:' \
+		--fetcher http \
+		--store-text \
+		--text-format markdown \
+		--markdown-converter pandoc \
+		--log-level INFO
 
 model=gemma3:4b # no tool call support on Ollama
 model=deepseek-r1:8b # no tool call support on Ollama
