@@ -23,6 +23,7 @@ corpus_scraper:
 	uv run --package corpus_scraper py -m corpus_scraper.main
 	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main crawl -h
 
+# Scrape commands for the 3 main data corpora
 CORPORA_OUTPUT_DIR := ./corpora/scraped_data
 SOLAR_SYSTEM_URLS_FILE := ./corpora/seed_urls/solar_system_wiki.txt
 SOLAR_SYSTEM_CORPUS_NAME := solar_system_wiki
