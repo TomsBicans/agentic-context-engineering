@@ -31,6 +31,10 @@ SOLAR_SYSTEM_ALLOWED_DOMAIN := en.wikipedia.org
 OBLIVION_CORPUS_NAME := oblivion_wiki
 OBLIVION_START_URL := https://en.uesp.net/wiki/Oblivion:Oblivion
 OBLIVION_ALLOWED_DOMAIN := en.uesp.net
+SCIPY_CORPUS_NAME := scipy_repo
+SCIPY_REPO_URL := https://github.com/scipy/scipy
+SCIPY_REF := HEAD
+SCIPY_SUBPATH := scipy
 
 corpus_scraper_solar_system:
 	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main crawl \
@@ -59,6 +63,19 @@ corpus_scraper_oblivion:
 		--store-text \
 		--text-format markdown \
 		--markdown-converter pandoc \
+		--log-level INFO
+
+corpus_scraper_scipy:
+	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main repo \
+		--output-dir ${CORPORA_OUTPUT_DIR} \
+		--corpus-name ${SCIPY_CORPUS_NAME} \
+		--repo-url ${SCIPY_REPO_URL} \
+		--ref ${SCIPY_REF} \
+		--subpath ${SCIPY_SUBPATH} \
+		--include '**/*.py' \
+		--exclude '**/tests/**' \
+		--max-files 500 \
+		--store-text \
 		--log-level INFO
 
 model=gemma3:4b # no tool call support on Ollama
