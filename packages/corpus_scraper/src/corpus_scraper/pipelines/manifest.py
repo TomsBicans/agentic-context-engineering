@@ -28,16 +28,16 @@ _VECTOR_UNWRAP_TAGS = {"div", "section"}
 
 class ListHttpManifestPipeline:
     def __init__(
-        self,
-        corpus_dir: Path,
-        manifest_path: Path,
-        store_raw: bool,
-        store_text: bool,
-        store_outlinks: bool,
-        compress: bool,
-        deduplicate_content: bool,
-        text_format: str,
-        markdown_converter: str,
+            self,
+            corpus_dir: Path,
+            manifest_path: Path,
+            store_raw: bool,
+            store_text: bool,
+            store_outlinks: bool,
+            compress: bool,
+            deduplicate_content: bool,
+            text_format: str,
+            markdown_converter: str,
     ) -> None:
         self.corpus_dir = corpus_dir
         self.manifest_path = manifest_path
@@ -81,28 +81,28 @@ class ListHttpManifestPipeline:
 
             class_names = node.get("class") or []
             if node.name in _VECTOR_DROP_TAGS and any(
-                str(class_name).startswith("vector-") for class_name in class_names
+                    str(class_name).startswith("vector-") for class_name in class_names
             ):
                 node.decompose()
                 continue
             if node.name in _VECTOR_UNWRAP_TAGS and any(
-                str(class_name).startswith("vector-") for class_name in class_names
+                    str(class_name).startswith("vector-") for class_name in class_names
             ):
                 node.unwrap()
                 continue
 
             node_id = node.get("id")
             if (
-                node.name in _VECTOR_DROP_TAGS
-                and isinstance(node_id, str)
-                and node_id.startswith("vector-")
+                    node.name in _VECTOR_DROP_TAGS
+                    and isinstance(node_id, str)
+                    and node_id.startswith("vector-")
             ):
                 node.decompose()
                 continue
             if (
-                node.name in _VECTOR_UNWRAP_TAGS
-                and isinstance(node_id, str)
-                and node_id.startswith("vector-")
+                    node.name in _VECTOR_UNWRAP_TAGS
+                    and isinstance(node_id, str)
+                    and node_id.startswith("vector-")
             ):
                 node.unwrap()
                 continue
@@ -114,9 +114,9 @@ class ListHttpManifestPipeline:
                 if attr in _PRESERVED_ATTRS:
                     continue
                 if (
-                    attr in {"class", "id", "style"}
-                    or attr.startswith("aria-")
-                    or attr.startswith("data-")
+                        attr in {"class", "id", "style"}
+                        or attr.startswith("aria-")
+                        or attr.startswith("data-")
                 ):
                     del node.attrs[attr]
 

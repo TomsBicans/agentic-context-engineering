@@ -20,13 +20,13 @@ class CrawlSpider(scrapy.Spider):
     name = "crawl_spider"
 
     def __init__(
-        self,
-        start_url: str,
-        allowed_domains: list[str] | None = None,
-        page_limit: int = 500,
-        allow_pattern: str | None = None,
-        deny_pattern: str | None = None,
-        **kwargs,
+            self,
+            start_url: str,
+            allowed_domains: list[str] | None = None,
+            page_limit: int = 500,
+            allow_pattern: str | None = None,
+            deny_pattern: str | None = None,
+            **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.start_url = start_url

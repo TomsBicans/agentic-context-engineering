@@ -247,7 +247,7 @@ def test_dry_run_does_not_write_files(tmp_path, capsys: pytest.CaptureFixture[st
 
 
 def test_list_http_ingestion_writes_manifest_and_artifacts(
-    tmp_path, capsys: pytest.CaptureFixture[str]
+        tmp_path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
