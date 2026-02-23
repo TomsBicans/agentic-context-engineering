@@ -17,7 +17,15 @@
 uv sync --all-packages --all-groups
 ```
 
-3. Launch the agent sample program
+3. Acquire the core datasets
+
+```
+make corpus_scraper_solar_system
+make corpus_scraper_oblivion
+make corpus_scraper_scipy
+```
+
+4. Launch the agent sample program
 
 ```
 make agent_test
