@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
+from fnmatch import fnmatchcase
 from pathlib import Path
+from pathlib import PurePosixPath
+import subprocess
 import sys
+import tempfile
 
 from pydantic import ValidationError
 from scrapy.crawler import CrawlerProcess
@@ -16,6 +22,7 @@ from corpus_scraper.config import (
     format_validation_error,
     job_to_json,
 )
+from corpus_scraper.pipelines.storage import write_payload
 from corpus_scraper.spiders.crawl_spider import CrawlSpider
 from corpus_scraper.spiders.list_spider import ListSpider
 
@@ -262,6 +269,133 @@ def _read_url_list(config: ListConfig) -> list[str]:
     return urls
 
 
+def _run_git(args: list[str], cwd: Path | None = None) -> str:
+    command = ["git", *args]
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=str(cwd) if cwd else None,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("git is not installed or not in PATH") from exc
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or "").strip()
+        stdout = (exc.stdout or "").strip()
+        detail = stderr or stdout or "unknown git error"
+        raise RuntimeError(f"git command failed ({' '.join(command)}): {detail}") from exc
+    return completed.stdout
+
+
+def _matches_glob(path: str, pattern: str) -> bool:
+    if pattern == "**/*":
+        return True
+    if fnmatchcase(path, pattern):
+        return True
+    return PurePosixPath(path).match(pattern)
+
+
+def _is_selected(path: str, include: list[str], exclude: list[str]) -> bool:
+    if include and not any(_matches_glob(path, pattern) for pattern in include):
+        return False
+    if exclude and any(_matches_glob(path, pattern) for pattern in exclude):
+        return False
+    return True
+
+
+def _run_repo(job: ScrapeJob, corpus_dir: Path, manifest_path: Path) -> None:
+    config = job.config
+    if not isinstance(config, RepoConfig):
+        raise ValueError("repo runner requires RepoConfig")
+
+    raw_dir = corpus_dir / "raw"
+    text_dir = corpus_dir / "text"
+    outlinks_dir = corpus_dir / "outlinks"
+
+    if config.store_raw:
+        raw_dir.mkdir(parents=True, exist_ok=True)
+    if config.store_text:
+        text_dir.mkdir(parents=True, exist_ok=True)
+    if config.store_outlinks:
+        outlinks_dir.mkdir(parents=True, exist_ok=True)
+
+    subpath = (config.subpath or "").replace("\\", "/").strip("/")
+    include = config.include or ["**/*"]
+    exclude = config.exclude or []
+
+    with tempfile.TemporaryDirectory(prefix="corpus_repo_") as tmp_dir:
+        checkout_dir = Path(tmp_dir) / "repo"
+        _run_git(["clone", "--quiet", "--no-checkout", config.repo_url, str(checkout_dir)])
+        _run_git(["checkout", "--quiet", config.ref], cwd=checkout_dir)
+        tracked = sorted(line for line in _run_git(["ls-files"], cwd=checkout_dir).splitlines() if line)
+
+        selected: list[str] = []
+        for rel in tracked:
+            normalized = rel.replace("\\", "/")
+            if subpath and not (normalized == subpath or normalized.startswith(f"{subpath}/")):
+                continue
+            if _is_selected(normalized, include, exclude):
+                selected.append(normalized)
+
+        selected = selected[: config.max_files]
+        seen_hashes: dict[str, int] = {}
+
+        with manifest_path.open("a", encoding="utf-8") as manifest_file:
+            for index, rel_path in enumerate(selected):
+                source_path = checkout_dir / rel_path
+                content = source_path.read_bytes()
+                content_hash = hashlib.sha256(content).hexdigest()
+                entry: dict[str, object] = {
+                    "content_sha256": content_hash,
+                    "error": None,
+                    "index": index,
+                    "outlinks_count": 0,
+                    "outlinks_path": None,
+                    "raw_path": None,
+                    "repo_path": rel_path,
+                    "size_bytes": len(content),
+                    "status_code": None,
+                    "text_path": None,
+                    "url": f"{config.repo_url}@{config.ref}:{rel_path}",
+                }
+
+                if config.deduplicate_content and content_hash in seen_hashes:
+                    entry["duplicate_of"] = seen_hashes[content_hash]
+                    manifest_file.write(json.dumps(entry, sort_keys=True) + "\n")
+                    continue
+                seen_hashes[content_hash] = index
+
+                rel_obj = Path(rel_path)
+                if config.store_raw:
+                    raw_target = raw_dir / rel_obj
+                    raw_target.parent.mkdir(parents=True, exist_ok=True)
+                    raw_written = write_payload(raw_target, content, config.compress)
+                    entry["raw_path"] = raw_written.relative_to(corpus_dir).as_posix()
+                if config.store_text:
+                    text_target = (text_dir / rel_obj).with_suffix((text_dir / rel_obj).suffix + ".txt")
+                    text_target.parent.mkdir(parents=True, exist_ok=True)
+                    decoded = content.decode("utf-8", errors="replace")
+                    text_written = write_payload(
+                        text_target,
+                        (decoded + "\n").encode("utf-8"),
+                        config.compress,
+                    )
+                    entry["text_path"] = text_written.relative_to(corpus_dir).as_posix()
+                if config.store_outlinks:
+                    outlinks_target = (outlinks_dir / rel_obj).with_suffix(".json")
+                    outlinks_target.parent.mkdir(parents=True, exist_ok=True)
+                    outlinks_written = write_payload(
+                        outlinks_target,
+                        b"[]\n",
+                        config.compress,
+                    )
+                    entry["outlinks_path"] = outlinks_written.relative_to(corpus_dir).as_posix()
+
+                manifest_file.write(json.dumps(entry, sort_keys=True) + "\n")
+
+
 def _run_list_http(job: ScrapeJob, corpus_dir: Path, manifest_path: Path) -> None:
     config = job.config
     if not isinstance(config, ListConfig):
@@ -359,6 +493,8 @@ def run_job(job: ScrapeJob) -> None:
         _run_list_http(job, corpus_dir, manifest_path)
     if job.mode == "crawl" and job.config.fetcher == "http":
         _run_crawl_http(job, corpus_dir, manifest_path)
+    if job.mode == "repo":
+        _run_repo(job, corpus_dir, manifest_path)
 
 
 def main(argv: list[str] | None = None) -> None:

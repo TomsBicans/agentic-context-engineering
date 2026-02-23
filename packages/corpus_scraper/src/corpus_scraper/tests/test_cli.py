@@ -2,6 +2,7 @@ import json
 import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
 import pytest
 from scrapy.http import Request, TextResponse
@@ -9,6 +10,20 @@ from scrapy.http import Request, TextResponse
 from corpus_scraper.main import main
 from corpus_scraper.pipelines.manifest import ListHttpManifestPipeline
 from corpus_scraper.spiders.crawl_spider import CrawlSpider
+
+
+def _create_local_repo(repo_dir: Path) -> str:
+    repo_dir.mkdir(parents=True, exist_ok=True)
+    (repo_dir / "README.md").write_text("# SciPy corpus\n", encoding="utf-8")
+    (repo_dir / "scipy").mkdir(exist_ok=True)
+    (repo_dir / "scipy" / "opt.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    (repo_dir / "scipy" / "data.bin").write_bytes(b"\x00\x01\x02")
+    subprocess.run(["git", "init"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo_dir, check=True, capture_output=True)
+    return str(repo_dir)
 
 
 def test_help_runs(capsys: pytest.CaptureFixture[str]) -> None:
@@ -168,7 +183,8 @@ def test_pandoc_requires_markdown_text_format(tmp_path, capsys: pytest.CaptureFi
     assert "requires --text-format markdown" in err
 
 
-def test_writes_stub_artifacts(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_repo_writes_artifacts_and_manifest(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo_url = _create_local_repo(tmp_path / "repo_src")
     output_dir = tmp_path / "corpora"
     main(
         [
@@ -178,7 +194,12 @@ def test_writes_stub_artifacts(tmp_path, capsys: pytest.CaptureFixture[str]) -> 
             "--corpus-name",
             "scipy",
             "--repo-url",
-            "https://github.com/scipy/scipy",
+            repo_url,
+            "--max-files",
+            "2",
+            "--include",
+            "**/*.py",
+            "--store-text",
         ]
     )
     capsys.readouterr()
@@ -189,11 +210,20 @@ def test_writes_stub_artifacts(tmp_path, capsys: pytest.CaptureFixture[str]) -> 
     manifest_path = corpus_dir / "manifest.jsonl"
     assert config_path.exists()
     assert manifest_path.exists()
-    assert manifest_path.read_text(encoding="utf-8") == ""
+    lines = [line for line in manifest_path.read_text(encoding="utf-8").splitlines() if line]
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert entry["repo_path"].endswith("opt.py")
+    assert entry["raw_path"].startswith("raw/")
+    assert entry["text_path"].startswith("text/")
+    assert entry["outlinks_path"].startswith("outlinks/")
+    assert (corpus_dir / entry["raw_path"]).exists()
+    assert (corpus_dir / entry["text_path"]).exists()
+    assert (corpus_dir / entry["outlinks_path"]).exists()
 
     written_config = json.loads(config_path.read_text(encoding="utf-8"))
     assert written_config["mode"] == "repo"
-    assert written_config["config"]["repo_url"] == "https://github.com/scipy/scipy"
+    assert written_config["config"]["repo_url"] == repo_url
 
 
 def test_dry_run_does_not_write_files(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
