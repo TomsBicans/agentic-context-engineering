@@ -22,13 +22,18 @@ corpus_scraper:
 CORPORA_OUTPUT_DIR := ./corpora/scraped_data
 SOLAR_SYSTEM_URLS_FILE := ./corpora/seed_urls/solar_system_wiki.txt
 SOLAR_SYSTEM_CORPUS_NAME := solar_system_wiki
+SOLAR_SYSTEM_START_URL := https://en.wikipedia.org/wiki/Solar_System
+SOLAR_SYSTEM_ALLOWED_DOMAIN := en.wikipedia.org
 
 corpus_scraper_solar_system:
-	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main list \
+	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main crawl \
 		--output-dir ${CORPORA_OUTPUT_DIR} \
 		--corpus-name ${SOLAR_SYSTEM_CORPUS_NAME} \
-		--input-file ${SOLAR_SYSTEM_URLS_FILE} \
+		--start-url ${SOLAR_SYSTEM_START_URL} \
+		--allowed-domain ${SOLAR_SYSTEM_ALLOWED_DOMAIN} \
+		--page-limit 500 \
 		--fetcher http \
+		--download-delay 0.75 \
 		--store-text \
 		--text-format markdown \
 		--markdown-converter pandoc

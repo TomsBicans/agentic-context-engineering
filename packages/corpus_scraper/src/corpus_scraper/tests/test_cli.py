@@ -4,9 +4,11 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
+from scrapy.http import Request, TextResponse
 
 from corpus_scraper.main import main
 from corpus_scraper.pipelines.manifest import ListHttpManifestPipeline
+from corpus_scraper.spiders.crawl_spider import CrawlSpider
 
 
 def test_help_runs(capsys: pytest.CaptureFixture[str]) -> None:
@@ -329,3 +331,45 @@ def test_pipeline_markdown_with_pandoc(tmp_path, monkeypatch: pytest.MonkeyPatch
     assert entry["text_path"].endswith(".md")
     markdown_text = (corpus_dir / entry["text_path"]).read_text(encoding="utf-8")
     assert "# Solar System" in markdown_text
+
+
+def test_crawl_spider_filters_wikipedia_non_article_links() -> None:
+    spider = CrawlSpider(
+        start_url="https://en.wikipedia.org/wiki/Solar_System",
+        allowed_domains=["en.wikipedia.org"],
+        page_limit=500,
+    )
+    assert spider._should_follow("https://en.wikipedia.org/wiki/Mars")
+    assert not spider._should_follow("https://en.wikipedia.org/wiki/Category:Solar_System")
+    assert not spider._should_follow("https://en.wikipedia.org/wiki/Talk:Solar_System")
+    assert not spider._should_follow("https://example.org/wiki/Solar_System")
+    assert not spider._should_follow("https://en.wikipedia.org/w/index.php?title=Solar_System")
+
+
+def test_crawl_spider_respects_page_limit_when_scheduling() -> None:
+    spider = CrawlSpider(
+        start_url="https://en.wikipedia.org/wiki/Solar_System",
+        allowed_domains=["en.wikipedia.org"],
+        page_limit=2,
+    )
+    spider._scheduled_urls.add("https://en.wikipedia.org/wiki/Solar_System")
+    spider._scheduled_count = 1
+
+    html = (
+        "<html><body>"
+        "<a href='/wiki/Mars'>Mars</a>"
+        "<a href='/wiki/Jupiter'>Jupiter</a>"
+        "</body></html>"
+    )
+    request = Request(url="https://en.wikipedia.org/wiki/Solar_System")
+    response = TextResponse(
+        url="https://en.wikipedia.org/wiki/Solar_System",
+        body=html.encode("utf-8"),
+        encoding="utf-8",
+        request=request,
+    )
+
+    requests = list(spider._requests_from_links(response))
+    assert len(requests) == 1
+    assert requests[0].url == "https://en.wikipedia.org/wiki/Jupiter"
+    assert spider._scheduled_count == 2

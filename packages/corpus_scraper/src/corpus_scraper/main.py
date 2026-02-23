@@ -16,6 +16,7 @@ from corpus_scraper.config import (
     format_validation_error,
     job_to_json,
 )
+from corpus_scraper.spiders.crawl_spider import CrawlSpider
 from corpus_scraper.spiders.list_spider import ListSpider
 
 
@@ -297,6 +298,51 @@ def _run_list_http(job: ScrapeJob, corpus_dir: Path, manifest_path: Path) -> Non
     process.start(stop_after_crawl=True, install_signal_handlers=False)
 
 
+def _run_crawl_http(job: ScrapeJob, corpus_dir: Path, manifest_path: Path) -> None:
+    config = job.config
+    if not isinstance(config, CrawlConfig):
+        raise ValueError("crawl runner requires CrawlConfig")
+
+    crawl_delay = config.download_delay if config.download_delay > 0 else 0.5
+    settings: dict[str, object] = {
+        "CONCURRENT_REQUESTS": config.concurrency,
+        "CORPUS_COMPRESS": config.compress,
+        "CORPUS_DEDUPLICATE_CONTENT": config.deduplicate_content,
+        "CORPUS_DIR": str(corpus_dir),
+        "CORPUS_MANIFEST_PATH": str(manifest_path),
+        "CORPUS_MARKDOWN_CONVERTER": config.markdown_converter,
+        "CORPUS_STORE_OUTLINKS": config.store_outlinks,
+        "CORPUS_STORE_RAW": config.store_raw,
+        "CORPUS_STORE_TEXT": config.store_text,
+        "CORPUS_TEXT_FORMAT": config.text_format,
+        "DEPTH_LIMIT": config.max_depth,
+        "DOWNLOAD_DELAY": crawl_delay,
+        "DOWNLOAD_TIMEOUT": config.timeout,
+        "ITEM_PIPELINES": {
+            "corpus_scraper.pipelines.manifest.ListHttpManifestPipeline": 300,
+        },
+        "LOG_ENABLED": False,
+        "RANDOMIZE_DOWNLOAD_DELAY": True,
+    }
+
+    if config.user_agent:
+        settings["USER_AGENT"] = config.user_agent
+    if config.time_limit is not None:
+        settings["CLOSESPIDER_TIMEOUT"] = config.time_limit
+        settings["CORPUS_TIME_LIMIT"] = config.time_limit
+
+    process = CrawlerProcess(settings=settings)
+    process.crawl(
+        CrawlSpider,
+        start_url=config.start_url,
+        allowed_domains=config.allowed_domain,
+        page_limit=config.page_limit,
+        allow_pattern=config.allow_pattern,
+        deny_pattern=config.deny_pattern,
+    )
+    process.start(stop_after_crawl=True, install_signal_handlers=False)
+
+
 def run_job(job: ScrapeJob) -> None:
     corpus_dir, config_path, manifest_path = _job_paths(job)
 
@@ -309,6 +355,8 @@ def run_job(job: ScrapeJob) -> None:
 
     if job.mode == "list" and job.config.fetcher == "http":
         _run_list_http(job, corpus_dir, manifest_path)
+    if job.mode == "crawl" and job.config.fetcher == "http":
+        _run_crawl_http(job, corpus_dir, manifest_path)
 
 
 def main(argv: list[str] | None = None) -> None:
