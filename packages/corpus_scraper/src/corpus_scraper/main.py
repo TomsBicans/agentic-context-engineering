@@ -284,7 +284,8 @@ def _run_list_http(job: ScrapeJob, corpus_dir: Path, manifest_path: Path) -> Non
         "ITEM_PIPELINES": {
             "corpus_scraper.pipelines.manifest.ListHttpManifestPipeline": 300,
         },
-        "LOG_ENABLED": False,
+        "LOG_ENABLED": True,
+        "LOG_LEVEL": config.log_level,
     }
 
     if config.user_agent:
@@ -321,7 +322,8 @@ def _run_crawl_http(job: ScrapeJob, corpus_dir: Path, manifest_path: Path) -> No
         "ITEM_PIPELINES": {
             "corpus_scraper.pipelines.manifest.ListHttpManifestPipeline": 300,
         },
-        "LOG_ENABLED": False,
+        "LOG_ENABLED": True,
+        "LOG_LEVEL": config.log_level,
         "RANDOMIZE_DOWNLOAD_DELAY": True,
     }
 

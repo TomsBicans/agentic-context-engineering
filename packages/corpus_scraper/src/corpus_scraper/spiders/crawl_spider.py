@@ -144,6 +144,7 @@ class CrawlSpider(scrapy.Spider):
     def parse(self, response: Response):
         if self._is_timed_out():
             raise CloseSpider("time_limit_reached")
+        self.logger.info("Fetched [%s] %s", response.status, response.url)
 
         yield {
             "content_bytes": bytes(response.body),
@@ -164,6 +165,7 @@ class CrawlSpider(scrapy.Spider):
     def handle_error(self, failure):
         request = failure.request
         response = getattr(failure.value, "response", None)
+        self.logger.warning("Request failed: %s (%s)", request.url, failure.value)
 
         yield {
             "content_bytes": b"",
