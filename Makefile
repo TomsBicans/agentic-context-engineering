@@ -13,6 +13,7 @@ run_tests:
 install_tools:
 	uv tool install ./packages/cli
 	uv tool install ./packages/agent
+	uv tool install ./packages/corpus_scraper
 
 
 corpus_scraper_h:
