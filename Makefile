@@ -4,6 +4,9 @@ PYTHON := python3
 install_dependencies:
 	uv sync --all-packages --all-groups
 
+i:
+	make install_dependencies
+
 run_tests:
 	uv run --package agent ${PYTHON} -m pytest -q
 
