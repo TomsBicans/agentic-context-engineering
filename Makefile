@@ -24,7 +24,6 @@ corpus_scraper:
 
 # Scrape commands for the 3 main data corpora
 CORPORA_OUTPUT_DIR := ./corpora/scraped_data
-SOLAR_SYSTEM_URLS_FILE := ./corpora/seed_urls/solar_system_wiki.txt
 SOLAR_SYSTEM_CORPUS_NAME := solar_system_wiki
 SOLAR_SYSTEM_START_URL := https://en.wikipedia.org/wiki/Solar_System
 SOLAR_SYSTEM_ALLOWED_DOMAIN := en.wikipedia.org
