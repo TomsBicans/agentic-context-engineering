@@ -20,7 +20,6 @@ corpus_scraper_h:
 	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main -h
 
 corpus_scraper:
-	uv run --package corpus_scraper py -m corpus_scraper.main
 	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main crawl -h
 
 # Scrape commands for the 3 main data corpora
