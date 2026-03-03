@@ -1,13 +1,81 @@
+PYTHON := python3
+
 # Setup
 install_dependencies:
 	uv sync --all-packages --all-groups
 
+i:
+	make install_dependencies
+
 run_tests:
-	uv run --package agent py -m pytest -q
+	uv run --package agent ${PYTHON} -m pytest -q
 
 install_tools:
 	uv tool install ./packages/cli
 	uv tool install ./packages/agent
+	uv tool install ./packages/corpus_scraper
+
+
+corpus_scraper_h:
+	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main -h
+
+corpus_scraper:
+	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main crawl -h
+
+# Scrape commands for the 3 main data corpora
+CORPORA_OUTPUT_DIR := ./corpora/scraped_data
+SOLAR_SYSTEM_CORPUS_NAME := solar_system_wiki
+SOLAR_SYSTEM_START_URL := https://en.wikipedia.org/wiki/Solar_System
+SOLAR_SYSTEM_ALLOWED_DOMAIN := en.wikipedia.org
+OBLIVION_CORPUS_NAME := oblivion_wiki
+OBLIVION_START_URL := https://en.uesp.net/wiki/Oblivion:Oblivion
+OBLIVION_ALLOWED_DOMAIN := en.uesp.net
+SCIPY_CORPUS_NAME := scipy_repo
+SCIPY_REPO_URL := https://github.com/scipy/scipy
+SCIPY_REF := HEAD
+SCIPY_SUBPATH := scipy
+
+corpus_scraper_solar_system:
+	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main crawl \
+		--output-dir ${CORPORA_OUTPUT_DIR} \
+		--corpus-name ${SOLAR_SYSTEM_CORPUS_NAME} \
+		--start-url ${SOLAR_SYSTEM_START_URL} \
+		--allowed-domain ${SOLAR_SYSTEM_ALLOWED_DOMAIN} \
+		--page-limit 500 \
+		--fetcher http \
+		--download-delay 0.75 \
+		--store-text \
+		--text-format markdown \
+		--markdown-converter pandoc \
+		--log-level INFO
+
+corpus_scraper_oblivion:
+	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main crawl \
+		--output-dir ${CORPORA_OUTPUT_DIR} \
+		--corpus-name ${OBLIVION_CORPUS_NAME} \
+		--start-url ${OBLIVION_START_URL} \
+		--allowed-domain ${OBLIVION_ALLOWED_DOMAIN} \
+		--page-limit 500 \
+		--download-delay 1.0 \
+		--allow-pattern '/wiki/Oblivion:' \
+		--fetcher http \
+		--store-text \
+		--text-format markdown \
+		--markdown-converter pandoc \
+		--log-level INFO
+
+corpus_scraper_scipy:
+	uv run --package corpus_scraper ${PYTHON} -m corpus_scraper.main repo \
+		--output-dir ${CORPORA_OUTPUT_DIR} \
+		--corpus-name ${SCIPY_CORPUS_NAME} \
+		--repo-url ${SCIPY_REPO_URL} \
+		--ref ${SCIPY_REF} \
+		--subpath ${SCIPY_SUBPATH} \
+		--include '**/*.py' \
+		--exclude '**/tests/**' \
+		--max-files 500 \
+		--store-text \
+		--log-level INFO
 
 model=gemma3:4b # no tool call support on Ollama
 model=deepseek-r1:8b # no tool call support on Ollama
@@ -41,16 +109,16 @@ ctx=4096
 ctx=8192
 
 agent_h:
-	uv run --package agent py -m agent.core -h
+	uv run --package agent ${PYTHON} -m agent.core -h
 
 agent_test:
-	uv run --package agent py -m agent.core ${q} --model ${model} --num_ctx ${ctx} --role examinee --path-to-corpora "./corpora/scraped_data/solar_system_wiki" --no-stream --reasoning-enabled
+	uv run --package agent ${PYTHON} -m agent.core ${q} --model ${model} --num_ctx ${ctx} --role examinee --path-to-corpora "./corpora/scraped_data/solar_system_wiki" --no-stream --reasoning-enabled
 
 agent:
-	uv run --package agent py -m agent.core
+	uv run --package agent ${PYTHON} -m agent.core
 
 main_h:
-	uv run --package cli py -m cli.main -h
+	uv run --package cli ${PYTHON} -m cli.main -h
 
 main:
-	uv run --package cli py -m cli.main
+	uv run --package cli ${PYTHON} -m cli.main

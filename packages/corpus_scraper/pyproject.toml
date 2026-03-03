@@ -1,0 +1,26 @@
+[project]
+name = "corpus-scraper"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "TomsBicans", email = "tomsbicans@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "pydantic>=2.0.0",
+    "scrapy>=2.14.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+corpus-scraper = "corpus_scraper.main:main"
+
+[build-system]
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
