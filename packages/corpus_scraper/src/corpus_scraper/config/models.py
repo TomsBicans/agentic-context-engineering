@@ -90,6 +90,16 @@ class CrawlConfig(CommonConfig):
             raise ValueError("max-depth must be between 0 and 50")
         return value
 
+    @field_validator("allow_pattern", "deny_pattern")
+    @classmethod
+    def validate_regex_pattern(cls, value: str | None) -> str | None:
+        if value is not None:
+            try:
+                re.compile(value)
+            except re.error as exc:
+                raise ValueError(f"invalid regex pattern: {exc}") from exc
+        return value
+
     @model_validator(mode="after")
     def validate_allowed_domain(self) -> CrawlConfig:
         if not self.allowed_domain:

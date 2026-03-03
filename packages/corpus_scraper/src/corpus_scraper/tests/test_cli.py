@@ -376,6 +376,146 @@ def test_crawl_spider_filters_wikipedia_non_article_links() -> None:
     assert not spider._should_follow("https://en.wikipedia.org/w/index.php?title=Solar_System")
 
 
+def test_invalid_allow_pattern_fails(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+    output_dir = tmp_path / "corpora"
+    with pytest.raises(SystemExit) as excinfo:
+        main(
+            [
+                "crawl",
+                "--output-dir",
+                str(output_dir),
+                "--corpus-name",
+                "demo",
+                "--start-url",
+                "https://example.com",
+                "--allowed-domain",
+                "example.com",
+                "--allow-pattern",
+                "[invalid(regex",
+                "--dry-run",
+            ]
+        )
+    assert excinfo.value.code == 1
+    err = capsys.readouterr().err
+    assert "invalid regex" in err
+
+
+def test_invalid_deny_pattern_fails(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+    output_dir = tmp_path / "corpora"
+    with pytest.raises(SystemExit) as excinfo:
+        main(
+            [
+                "crawl",
+                "--output-dir",
+                str(output_dir),
+                "--corpus-name",
+                "demo",
+                "--start-url",
+                "https://example.com",
+                "--allowed-domain",
+                "example.com",
+                "--deny-pattern",
+                "(?P<x>(?P<x>bad))",
+                "--dry-run",
+            ]
+        )
+    assert excinfo.value.code == 1
+    err = capsys.readouterr().err
+    assert "invalid regex" in err
+
+
+def test_pandoc_missing_raises_runtime_error(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_pandoc_missing(*args, **kwargs):
+        raise FileNotFoundError("pandoc not found")
+
+    monkeypatch.setattr("corpus_scraper.pipelines.manifest.subprocess.run", fake_pandoc_missing)
+
+    corpus_dir = tmp_path / "no_pandoc"
+    manifest_path = corpus_dir / "manifest.jsonl"
+    pipeline = ListHttpManifestPipeline(
+        corpus_dir=corpus_dir,
+        manifest_path=manifest_path,
+        store_raw=False,
+        store_text=True,
+        store_outlinks=False,
+        compress=False,
+        deduplicate_content=False,
+        text_format="markdown",
+        markdown_converter="pandoc",
+    )
+    pipeline.open_spider()
+    with pytest.raises(RuntimeError, match="pandoc is not installed"):
+        pipeline.process_item(
+            {
+                "content_bytes": b"<html><body><p>Hello</p></body></html>",
+                "content_type": "text/html",
+                "error": None,
+                "index": 0,
+                "outlinks": [],
+                "status_code": 200,
+                "text": "Hello",
+                "url": "https://example.com/hello",
+            }
+        )
+    pipeline.close_spider()
+
+
+def test_repo_skips_text_for_binary_files(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo_url = _create_local_repo(tmp_path / "repo_src")
+    output_dir = tmp_path / "corpora"
+    main(
+        [
+            "repo",
+            "--output-dir",
+            str(output_dir),
+            "--corpus-name",
+            "scipy",
+            "--repo-url",
+            repo_url,
+            "--include",
+            "**/*.bin",
+            "--store-text",
+        ]
+    )
+    capsys.readouterr()
+    manifest_path = output_dir / "scipy" / "manifest.jsonl"
+    lines = [line for line in manifest_path.read_text(encoding="utf-8").splitlines() if line]
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert entry["repo_path"].endswith(".bin")
+    assert entry["text_path"] is None
+
+
+def test_manifest_not_truncated_on_restart(tmp_path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo_url = _create_local_repo(tmp_path / "repo_src")
+    output_dir = tmp_path / "corpora"
+    common_args = [
+        "repo",
+        "--output-dir",
+        str(output_dir),
+        "--corpus-name",
+        "scipy",
+        "--repo-url",
+        repo_url,
+        "--include",
+        "**/*.py",
+        "--max-files",
+        "1",
+    ]
+    main(common_args)
+    capsys.readouterr()
+
+    manifest_path = output_dir / "scipy" / "manifest.jsonl"
+    lines_after_first = manifest_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines_after_first) == 1
+
+    main(common_args)
+    capsys.readouterr()
+
+    lines_after_second = manifest_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines_after_second) == 2
+
+
 def test_crawl_spider_respects_page_limit_when_scheduling() -> None:
     spider = CrawlSpider(
         start_url="https://en.wikipedia.org/wiki/Solar_System",

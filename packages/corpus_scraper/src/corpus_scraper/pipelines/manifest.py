@@ -133,9 +133,12 @@ class ListHttpManifestPipeline:
                     capture_output=True,
                     text=True,
                     check=True,
+                    timeout=60,
                 )
             except FileNotFoundError as exc:
                 raise RuntimeError("pandoc is not installed or not in PATH") from exc
+            except subprocess.TimeoutExpired as exc:
+                raise RuntimeError("pandoc timed out converting HTML to Markdown") from exc
             except subprocess.CalledProcessError as exc:
                 stderr = (exc.stderr or "").strip()
                 raise RuntimeError(f"pandoc conversion failed: {stderr}") from exc

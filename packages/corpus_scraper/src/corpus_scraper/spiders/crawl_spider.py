@@ -136,11 +136,6 @@ class CrawlSpider(scrapy.Spider):
             return
         yield self._initial_request()
 
-    def start_requests(self):
-        if self._is_timed_out() or self.page_limit <= 0:
-            return
-        yield self._initial_request()
-
     def parse(self, response: Response):
         if self._is_timed_out():
             raise CloseSpider("time_limit_reached")

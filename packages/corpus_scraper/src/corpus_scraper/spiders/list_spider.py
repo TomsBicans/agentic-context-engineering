@@ -46,9 +46,6 @@ class ListSpider(scrapy.Spider):
         for request in self._requests():
             yield request
 
-    def start_requests(self):
-        yield from self._requests()
-
     def parse(self, response: Response):
         if self._is_timed_out():
             raise CloseSpider("time_limit_reached")

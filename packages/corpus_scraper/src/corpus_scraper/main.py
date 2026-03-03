@@ -374,15 +374,23 @@ def _run_repo(job: ScrapeJob, corpus_dir: Path, manifest_path: Path) -> None:
                     raw_written = write_payload(raw_target, content, config.compress)
                     entry["raw_path"] = raw_written.relative_to(corpus_dir).as_posix()
                 if config.store_text:
-                    text_target = (text_dir / rel_obj).with_suffix((text_dir / rel_obj).suffix + ".txt")
-                    text_target.parent.mkdir(parents=True, exist_ok=True)
-                    decoded = content.decode("utf-8", errors="replace")
-                    text_written = write_payload(
-                        text_target,
-                        (decoded + "\n").encode("utf-8"),
-                        config.compress,
-                    )
-                    entry["text_path"] = text_written.relative_to(corpus_dir).as_posix()
+                    _is_binary = b"\x00" in content
+                    if not _is_binary:
+                        try:
+                            _decoded: str | None = content.decode("utf-8")
+                        except UnicodeDecodeError:
+                            _decoded = None
+                    else:
+                        _decoded = None
+                    if _decoded is not None:
+                        text_target = (text_dir / rel_obj).with_suffix((text_dir / rel_obj).suffix + ".txt")
+                        text_target.parent.mkdir(parents=True, exist_ok=True)
+                        text_written = write_payload(
+                            text_target,
+                            (_decoded + "\n").encode("utf-8"),
+                            config.compress,
+                        )
+                        entry["text_path"] = text_written.relative_to(corpus_dir).as_posix()
                 if config.store_outlinks:
                     outlinks_target = (outlinks_dir / rel_obj).with_suffix(".json")
                     outlinks_target.parent.mkdir(parents=True, exist_ok=True)
@@ -487,7 +495,8 @@ def run_job(job: ScrapeJob) -> None:
 
     corpus_dir.mkdir(parents=True, exist_ok=True)
     config_path.write_text(job_to_json(job) + "\n", encoding="utf-8")
-    manifest_path.write_text("", encoding="utf-8")
+    if not manifest_path.exists():
+        manifest_path.write_text("", encoding="utf-8")
 
     if job.mode == "list" and job.config.fetcher == "http":
         _run_list_http(job, corpus_dir, manifest_path)
