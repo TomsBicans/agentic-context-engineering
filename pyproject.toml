@@ -6,6 +6,9 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = []
 
+[tool.pytest.ini_options]
+norecursedirs = ["corpora", ".venv", ".git"]
+
 [tool.uv.workspace]
 members = [
     "packages/agent",
