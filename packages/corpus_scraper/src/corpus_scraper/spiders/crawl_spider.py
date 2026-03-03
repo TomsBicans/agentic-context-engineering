@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import AsyncGenerator, Generator, Iterator
+from typing import Any, Self
 from urllib.parse import urldefrag, urljoin, urlparse
 
 import scrapy
@@ -39,7 +41,7 @@ class CrawlSpider(scrapy.Spider):
         self._scheduled_count = 0
 
     @classmethod
-    def from_crawler(cls, crawler: Crawler, *args, **kwargs):
+    def from_crawler(cls, crawler: Crawler, *args, **kwargs) -> Self:
         spider = super().from_crawler(crawler, *args, **kwargs)
         spider.time_limit = crawler.settings.getint("CORPUS_TIME_LIMIT") or None
         return spider
@@ -98,7 +100,7 @@ class CrawlSpider(scrapy.Spider):
         chunks = [chunk.strip() for chunk in response.xpath("//body//text()").getall() if chunk.strip()]
         return "\n".join(chunks)
 
-    def _requests_from_links(self, response: Response):
+    def _requests_from_links(self, response: Response) -> Iterator[Request]:
         for href in sorted(response.css("a::attr(href)").getall()):
             if self._scheduled_count >= self.page_limit:
                 return
@@ -119,7 +121,7 @@ class CrawlSpider(scrapy.Spider):
                 meta={"corpus_index": index, "handle_httpstatus_all": True},
             )
 
-    def _initial_request(self):
+    def _initial_request(self) -> Request:
         index = self._scheduled_count
         self._scheduled_count += 1
         self._scheduled_urls.add(self.start_url)
@@ -131,12 +133,12 @@ class CrawlSpider(scrapy.Spider):
             meta={"corpus_index": index, "handle_httpstatus_all": True},
         )
 
-    async def start(self):
+    async def start(self) -> AsyncGenerator[Request, None]:
         if self._is_timed_out() or self.page_limit <= 0:
             return
         yield self._initial_request()
 
-    def parse(self, response: Response):
+    def parse(self, response: Response) -> Generator[dict[str, Any] | Request, None, None]:
         if self._is_timed_out():
             raise CloseSpider("time_limit_reached")
         self.logger.info("Fetched [%s] %s", response.status, response.url)
@@ -157,7 +159,7 @@ class CrawlSpider(scrapy.Spider):
 
         yield from self._requests_from_links(response)
 
-    def handle_error(self, failure):
+    def handle_error(self, failure: Any) -> Generator[dict[str, Any], None, None]:
         request = failure.request
         response = getattr(failure.value, "response", None)
         self.logger.warning("Request failed: %s (%s)", request.url, failure.value)

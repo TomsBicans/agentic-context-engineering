@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import time
+from collections.abc import AsyncGenerator, Generator, Iterator
+from typing import Any, Self
 from urllib.parse import urldefrag, urljoin
 
 import scrapy
@@ -20,7 +22,7 @@ class ListSpider(scrapy.Spider):
         self._started_at = time.monotonic()
 
     @classmethod
-    def from_crawler(cls, crawler: Crawler, *args, **kwargs):
+    def from_crawler(cls, crawler: Crawler, *args, **kwargs) -> Self:
         spider = super().from_crawler(crawler, *args, **kwargs)
         spider.time_limit = crawler.settings.getint("CORPUS_TIME_LIMIT") or None
         return spider
@@ -30,7 +32,7 @@ class ListSpider(scrapy.Spider):
             return False
         return (time.monotonic() - self._started_at) >= self.time_limit
 
-    def _requests(self):
+    def _requests(self) -> Iterator[Request]:
         for index, url in enumerate(self.urls[: self.page_limit]):
             if self._is_timed_out():
                 break
@@ -42,11 +44,11 @@ class ListSpider(scrapy.Spider):
                 meta={"corpus_index": index, "handle_httpstatus_all": True},
             )
 
-    async def start(self):
+    async def start(self) -> AsyncGenerator[Request, None]:
         for request in self._requests():
             yield request
 
-    def parse(self, response: Response):
+    def parse(self, response: Response) -> Generator[dict[str, Any], None, None]:
         if self._is_timed_out():
             raise CloseSpider("time_limit_reached")
         self.logger.info("Fetched [%s] %s", response.status, response.url)
@@ -73,7 +75,7 @@ class ListSpider(scrapy.Spider):
             "url": response.url,
         }
 
-    def handle_error(self, failure):
+    def handle_error(self, failure: Any) -> Generator[dict[str, Any], None, None]:
         request = failure.request
         response = getattr(failure.value, "response", None)
         self.logger.warning("Request failed: %s (%s)", request.url, failure.value)
