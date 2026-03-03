@@ -104,3 +104,10 @@ metadata (URL, hash, paths, status). Pydantic models in `config/models.py` valid
 - The `--require-tools` flag enforces that the EXAMINEE calls at least one tool before answering (reproducibility).
 - The REPL lazy-initializes the agent on first real query; agent is reused across queries in the same session.
 - REPL history is persisted to `~/.ace_history`.
+
+# Code style rules
+
+- Do NOT add decorative banner comments (e.g. lines of dashes) or “meta” comments about the agent/process.
+- Only add/edit comments when they explain non-obvious intent, constraints, or tricky behavior.
+- Never add comments that describe the conversation, turns, thinking, prompts, or tooling.
+- If you feel a banner would help, use meaningful function/section names instead.
