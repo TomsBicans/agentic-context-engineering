@@ -10,6 +10,16 @@ i:
 run_tests:
 	uv run --package agent ${PYTHON} -m pytest -q
 
+test_cli:
+	uv run --package cli ${PYTHON} -m pytest packages/cli/src/cli/tests/ -v
+
+test_agent:
+	uv run --package agent ${PYTHON} -m pytest -v
+
+test_all:
+	uv run --package agent ${PYTHON} -m pytest -v
+	uv run --package cli ${PYTHON} -m pytest packages/cli/src/cli/tests/ -v
+
 install_tools:
 	uv tool install ./packages/cli
 	uv tool install ./packages/agent
@@ -122,3 +132,41 @@ main_h:
 
 main:
 	uv run --package cli ${PYTHON} -m cli.main
+
+# ace CLI - single query
+corpus=./corpora/scraped_data/solar_system_wiki
+fmt=table
+k=10
+
+ace_h:
+	uv run ace -h
+
+ace_query:
+	uv run ace query "${q}" \
+		--path-to-corpora "${corpus}" \
+		--format ${fmt} \
+		--k ${k} \
+		--model ${model} \
+		--num-ctx ${ctx}
+
+ace_query_json:
+	uv run ace query "${q}" \
+		--path-to-corpora "${corpus}" \
+		--format json \
+		--k ${k} \
+		--model ${model} \
+		--num-ctx ${ctx}
+
+ace_query_no_stream:
+	uv run ace query "${q}" \
+		--path-to-corpora "${corpus}" \
+		--format ${fmt} \
+		--k ${k} \
+		--model ${model} \
+		--num-ctx ${ctx} \
+		--no-stream
+
+# ace CLI - interactive REPL
+# Usage: make ace [corpus=./path]
+ace:
+	uv run ace --path-to-corpora "${corpus}"

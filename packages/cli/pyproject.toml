@@ -9,10 +9,13 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "agent",
+    "rich>=13.0.0",
+    "prompt-toolkit>=3.0.0",
 ]
 
 [project.scripts]
 agentic-context-engineering = "cli.main:main"
+ace = "cli.main:main"
 
 [build-system]
 requires = ["uv_build>=0.9.26,<0.10.0"]
