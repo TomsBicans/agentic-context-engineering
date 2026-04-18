@@ -142,7 +142,7 @@ ace_h:
 	uv run ace -h
 
 ace_query:
-	uv run ace query "${q}" \
+	uv run ace query ${q} \
 		--path-to-corpora "${corpus}" \
 		--format ${fmt} \
 		--k ${k} \
@@ -150,7 +150,7 @@ ace_query:
 		--num-ctx ${ctx}
 
 ace_query_json:
-	uv run ace query "${q}" \
+	uv run ace query ${q} \
 		--path-to-corpora "${corpus}" \
 		--format json \
 		--k ${k} \
@@ -158,7 +158,7 @@ ace_query_json:
 		--num-ctx ${ctx}
 
 ace_query_no_stream:
-	uv run ace query "${q}" \
+	uv run ace query ${q} \
 		--path-to-corpora "${corpus}" \
 		--format ${fmt} \
 		--k ${k} \
