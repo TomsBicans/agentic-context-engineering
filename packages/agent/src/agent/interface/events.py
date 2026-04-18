@@ -7,7 +7,7 @@ from langgraph.graph.state import CompiledStateGraph
 from agent.interface.invoke import invoke_agent
 from agent.interface.response import AgentResponse
 
-# EventTuple: ("token", str) | ("tool_call", str) | ("tool_result", str) | ("done", AgentResponse)
+# EventTuple: ("token", str) | ("tool_call", str) | ("tool_result", {"name", "snippet"}) | ("done", AgentResponse)
 EventTuple = tuple[str, Any]
 
 
@@ -50,7 +50,7 @@ def iter_stream_events(agent: CompiledStateGraph, prompt: str) -> Iterator[Event
     Event types:
       ("token", str)          - AI response token chunk
       ("tool_call", str)      - tool invocation starting (formatted as "name(args)")
-      ("tool_result", str)    - tool result received (tool name)
+      ("tool_result", dict)   - tool result received ({"name": str, "snippet": str})
       ("done", AgentResponse) - final response with all data
     """
     if not hasattr(agent, "stream"):

@@ -31,7 +31,6 @@ _EMBEDDED_RE = re.compile(
 )
 
 
-
 class _AceSegment:
     """Tracks tokens for one ace 'turn' (between tool calls).
 
@@ -101,7 +100,6 @@ def _strip_think_blocks(text: str) -> str:
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
-
 def render_stream_live(agent, prompt: str) -> AgentResponse:
     """Stream agent execution as a chronological timeline of panels.
 
@@ -121,7 +119,6 @@ def render_stream_live(agent, prompt: str) -> AgentResponse:
     # segments: alternating _AceSegment and tool-dicts {"call", "result"}
     segments: list = [_AceSegment()]
     final_response: Optional[AgentResponse] = None
-    tool_count = [0]  # mutable counter visible to inner functions
 
     def _current_ace() -> _AceSegment | None:
         return segments[-1] if isinstance(segments[-1], _AceSegment) else None
@@ -217,7 +214,6 @@ def render_stream_live(agent, prompt: str) -> AgentResponse:
 
             elif event_type == "tool_call":
                 segments.append({"call": payload, "result": None})
-                tool_count[0] += 1
                 live.update(_build_renderable())
 
             elif event_type == "tool_result":
@@ -238,7 +234,6 @@ def render_stream_live(agent, prompt: str) -> AgentResponse:
         final_response.message_content = last_ace.final_content
 
     return final_response
-
 
 
 def render_statements(response: AgentResponse, k: int = 10, fmt: str = "table") -> None:
@@ -279,7 +274,6 @@ def render_statements(response: AgentResponse, k: int = 10, fmt: str = "table") 
 
 def render_error(message: str) -> None:
     console.print(f"[bold red]Error:[/bold red] {message}")
-
 
 
 def _extract_statements(response: AgentResponse) -> list[dict]:

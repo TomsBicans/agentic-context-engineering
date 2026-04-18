@@ -69,7 +69,11 @@ def run_repl(args) -> None:
             console.print(HELP_TEXT)
             continue
         if text.startswith("/set "):
+            prev_model = model
             k, model = _handle_set(text, k, model)
+            if model != prev_model and agent is not None:
+                agent = None
+                console.print("[dim]Agent will reinitialize with the new model on next query.[/dim]")
             continue
 
         # Real query — lazy-init agent on first use
