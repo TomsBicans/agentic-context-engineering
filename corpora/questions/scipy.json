@@ -1,0 +1,422 @@
+[
+  {
+    "id": "sc_L1_001",
+    "corpus": "scipy",
+    "level": 1,
+    "question": "What is scipy.constants?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L1_002",
+    "corpus": "scipy",
+    "level": 1,
+    "question": "What is scipy.optimize?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L1_003",
+    "corpus": "scipy",
+    "level": 1,
+    "question": "What is scipy.stats?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L1_004",
+    "corpus": "scipy",
+    "level": 1,
+    "question": "What is scipy.integrate?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L1_005",
+    "corpus": "scipy",
+    "level": 1,
+    "question": "What is scipy.signal?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L1_006",
+    "corpus": "scipy",
+    "level": 1,
+    "question": "What is scipy.spatial?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L1_007",
+    "corpus": "scipy",
+    "level": 1,
+    "question": "What is scipy.cluster?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L1_008",
+    "corpus": "scipy",
+    "level": 1,
+    "question": "What is scipy.linalg?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L1_009",
+    "corpus": "scipy",
+    "level": 1,
+    "question": "What is scipy.interpolate?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L1_010",
+    "corpus": "scipy",
+    "level": 1,
+    "question": "What is scipy.sparse?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L2_001",
+    "corpus": "scipy",
+    "level": 2,
+    "question": "What is the scipy.optimize.minimize function?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L2_002",
+    "corpus": "scipy",
+    "level": 2,
+    "question": "What is scipy.stats.norm?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L2_003",
+    "corpus": "scipy",
+    "level": 2,
+    "question": "What is the LowLevelCallable class in SciPy?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L2_004",
+    "corpus": "scipy",
+    "level": 2,
+    "question": "What is scipy.spatial.KDTree?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L2_005",
+    "corpus": "scipy",
+    "level": 2,
+    "question": "What is scipy.integrate.quad?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L2_006",
+    "corpus": "scipy",
+    "level": 2,
+    "question": "What is scipy.cluster.hierarchy?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L2_007",
+    "corpus": "scipy",
+    "level": 2,
+    "question": "What is scipy.signal.butter?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L2_008",
+    "corpus": "scipy",
+    "level": 2,
+    "question": "What is scipy.sparse.csr_matrix?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L2_009",
+    "corpus": "scipy",
+    "level": 2,
+    "question": "What is scipy.interpolate.interp1d?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L2_010",
+    "corpus": "scipy",
+    "level": 2,
+    "question": "What is scipy.linalg.solve?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L3_001",
+    "corpus": "scipy",
+    "level": 3,
+    "question": "What is the unit of the speed of light constant (scipy.constants.c) in scipy.constants?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L3_002",
+    "corpus": "scipy",
+    "level": 3,
+    "question": "What parameters does scipy.integrate.quad accept?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L3_003",
+    "corpus": "scipy",
+    "level": 3,
+    "question": "What is the return value of scipy.optimize.minimize?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L3_004",
+    "corpus": "scipy",
+    "level": 3,
+    "question": "What is the unit of the Planck constant in scipy.constants?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L3_005",
+    "corpus": "scipy",
+    "level": 3,
+    "question": "What subpackage does the KDTree class belong to in SciPy?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L3_006",
+    "corpus": "scipy",
+    "level": 3,
+    "question": "What is the unit of the Boltzmann constant in scipy.constants?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L3_007",
+    "corpus": "scipy",
+    "level": 3,
+    "question": "What is the unit of the Newtonian constant of gravitation G in scipy.constants?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L3_008",
+    "corpus": "scipy",
+    "level": 3,
+    "question": "What is the unit of the elementary charge in scipy.constants?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L3_009",
+    "corpus": "scipy",
+    "level": 3,
+    "question": "What is the unit of the Avogadro constant in scipy.constants?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L3_010",
+    "corpus": "scipy",
+    "level": 3,
+    "question": "What is the unit of the Stefan-Boltzmann constant in scipy.constants?",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L4_001",
+    "corpus": "scipy",
+    "level": 4,
+    "question": "List all subpackages (modules) available in SciPy.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L4_002",
+    "corpus": "scipy",
+    "level": 4,
+    "question": "List all mathematical constants available in scipy.constants.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L4_003",
+    "corpus": "scipy",
+    "level": 4,
+    "question": "List all named physical constants available as attributes in scipy.constants.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L4_004",
+    "corpus": "scipy",
+    "level": 4,
+    "question": "List all optimization methods available via the method parameter in scipy.optimize.minimize.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L4_005",
+    "corpus": "scipy",
+    "level": 4,
+    "question": "List all sparse matrix format classes available in scipy.sparse.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L4_006",
+    "corpus": "scipy",
+    "level": 4,
+    "question": "List all integration functions available in scipy.integrate.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L4_007",
+    "corpus": "scipy",
+    "level": 4,
+    "question": "List all submodules available in scipy.cluster.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L4_008",
+    "corpus": "scipy",
+    "level": 4,
+    "question": "List all SI prefix constants available in scipy.constants.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L4_009",
+    "corpus": "scipy",
+    "level": 4,
+    "question": "List all public functions and classes exposed in the scipy.optimize namespace.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L4_010",
+    "corpus": "scipy",
+    "level": 4,
+    "question": "List all functions available in scipy.integrate for solving ordinary differential equations (ODEs).",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L5_001",
+    "corpus": "scipy",
+    "level": 5,
+    "question": "List all SciPy subpackages and their one-line descriptions.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L5_002",
+    "corpus": "scipy",
+    "level": 5,
+    "question": "List all named physical constants in scipy.constants and their units.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L5_003",
+    "corpus": "scipy",
+    "level": 5,
+    "question": "List all mathematical constants in scipy.constants and their values or descriptions.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L5_004",
+    "corpus": "scipy",
+    "level": 5,
+    "question": "List all optimization methods available in scipy.optimize.minimize and a brief description of what type of problem each is suited for.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L5_005",
+    "corpus": "scipy",
+    "level": 5,
+    "question": "List all integration functions in scipy.integrate and their one-line descriptions.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L5_006",
+    "corpus": "scipy",
+    "level": 5,
+    "question": "List all SI prefix constants in scipy.constants and their corresponding power of ten.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L5_007",
+    "corpus": "scipy",
+    "level": 5,
+    "question": "List all submodules in scipy.cluster and their descriptions.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L5_008",
+    "corpus": "scipy",
+    "level": 5,
+    "question": "List all sparse matrix format classes in scipy.sparse and their descriptions.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L5_009",
+    "corpus": "scipy",
+    "level": 5,
+    "question": "List all named physical constants in scipy.constants that relate to electromagnetic quantities and their units.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L5_010",
+    "corpus": "scipy",
+    "level": 5,
+    "question": "List all binary prefix constants in scipy.constants and their corresponding power of two.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L6_001",
+    "corpus": "scipy",
+    "level": 6,
+    "question": "List all SciPy subpackages sorted alphabetically, including their one-line descriptions.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L6_002",
+    "corpus": "scipy",
+    "level": 6,
+    "question": "List all named physical constants in scipy.constants sorted alphabetically by their attribute name, including their units.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L6_003",
+    "corpus": "scipy",
+    "level": 6,
+    "question": "List all optimization methods available in scipy.optimize.minimize sorted alphabetically.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L6_004",
+    "corpus": "scipy",
+    "level": 6,
+    "question": "List all integration functions in scipy.integrate sorted alphabetically, including their one-line descriptions.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L6_005",
+    "corpus": "scipy",
+    "level": 6,
+    "question": "List all mathematical constants in scipy.constants sorted alphabetically, including their values or descriptions.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L6_006",
+    "corpus": "scipy",
+    "level": 6,
+    "question": "List all SI prefix constants in scipy.constants sorted by their power of ten in descending order, including their power of ten.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L6_007",
+    "corpus": "scipy",
+    "level": 6,
+    "question": "List all sparse matrix format classes in scipy.sparse sorted alphabetically, including their descriptions.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L6_008",
+    "corpus": "scipy",
+    "level": 6,
+    "question": "List all binary prefix constants in scipy.constants sorted by their power of two in descending order, including their power of two.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L6_009",
+    "corpus": "scipy",
+    "level": 6,
+    "question": "List all named physical constants in scipy.constants sorted alphabetically by attribute name length from shortest to longest, including their units.",
+    "expected_facts": null
+  },
+  {
+    "id": "sc_L6_010",
+    "corpus": "scipy",
+    "level": 6,
+    "question": "List all SciPy subpackages sorted by description length in ascending order, including their descriptions.",
+    "expected_facts": null
+  }
+]

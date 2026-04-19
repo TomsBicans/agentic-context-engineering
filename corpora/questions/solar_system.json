@@ -1,0 +1,422 @@
+[
+  {
+    "id": "ss_L1_001",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is a planet according to the IAU definition?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L1_002",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is a dwarf planet?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L1_003",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is a natural satellite?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L1_004",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is an asteroid?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L1_005",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is a comet?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L1_006",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is the asteroid belt?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L1_007",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is a gas giant?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L1_008",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is an ice giant planet?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L1_009",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is the Kuiper Belt?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L1_010",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is the Oort Cloud?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L2_001",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Jupiter?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L2_002",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Saturn?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L2_003",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Mars?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L2_004",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is the Sun?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L2_005",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Venus?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L2_006",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Mercury?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L2_007",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Uranus?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L2_008",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Neptune?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L2_009",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Pluto?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L2_010",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Earth?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L3_001",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the mass of Jupiter?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L3_002",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the orbital period of Mars?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L3_003",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the mean surface temperature of Venus?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L3_004",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the equatorial diameter of Earth?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L3_005",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "How many known moons does Saturn have?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L3_006",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the average distance from Earth to the Sun in astronomical units?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L3_007",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the orbital period of Neptune?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L3_008",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the mass of the Sun?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L3_009",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the surface gravity of Mars relative to Earth?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L3_010",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the rotational period of Mercury?",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L4_001",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all eight planets of the Solar System.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L4_002",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all four Galilean moons of Jupiter.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L4_003",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all terrestrial (rocky) planets in the Solar System.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L4_004",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all currently recognized dwarf planets in the Solar System.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L4_005",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all known moons of Mars.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L4_006",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all known moons of Pluto.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L4_007",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all planets in the Solar System that have a ring system.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L4_008",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all outer planets of the Solar System (beyond the asteroid belt).",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L4_009",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all inner planets of the Solar System (inside the asteroid belt).",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L4_010",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all ice giant planets in the Solar System.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L5_001",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all eight planets of the Solar System and their orbital periods.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L5_002",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all four Galilean moons of Jupiter and their approximate diameters.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L5_003",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all four terrestrial planets and their masses.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L5_004",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all known moons of Mars and their orbital periods around Mars.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L5_005",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all recognized dwarf planets and the region of the Solar System each is located in.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L5_006",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all eight planets and their number of known natural satellites.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L5_007",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all four Galilean moons of Jupiter and their average orbital distances from Jupiter.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L5_008",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all known moons of Pluto and their approximate diameters.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L5_009",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all outer planets of the Solar System and their orbital periods.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L5_010",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all eight planets and their approximate masses.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L6_001",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all eight planets of the Solar System sorted by their average distance from the Sun in ascending order, including their distances in AU.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L6_002",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all eight planets sorted by their orbital period in ascending order, including their orbital periods.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L6_003",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all four Galilean moons of Jupiter sorted by their orbital period in ascending order, including their orbital periods.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L6_004",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all four terrestrial planets sorted by their mass in descending order, including their masses.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L6_005",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all eight planets sorted by their equatorial diameter in descending order, including their diameters.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L6_006",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all eight planets sorted by their number of known moons in descending order, including the moon counts.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L6_007",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all currently recognized dwarf planets sorted by their average distance from the Sun in ascending order, including their distances.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L6_008",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all four Galilean moons of Jupiter sorted by their average orbital distance from Jupiter in ascending order, including their distances.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L6_009",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all known moons of Pluto sorted by their orbital period in ascending order, including their orbital periods.",
+    "expected_facts": null
+  },
+  {
+    "id": "ss_L6_010",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all four inner planets sorted by their orbital period in ascending order, including their orbital periods.",
+    "expected_facts": null
+  }
+]
