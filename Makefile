@@ -197,3 +197,22 @@ release_corpora:
 		--title "Experiment corpora $(or ${tag},${release_tag})" \
 		--notes "Fixed corpus snapshots used in thesis experiments. Verify integrity with corpora_checksums.sha256."
 	rm -rf ${corpora_build_dir}
+
+# Download corpora from GitHub Release and extract locally.
+# No authentication required — uses public release URLs via curl.
+# Usage: make download_corpora
+#        make download_corpora tag=v1.1-corpora
+github_repo=TomsBicans/agentic-context-engineering
+release_base_url=https://github.com/${github_repo}/releases/download
+
+download_corpora:
+	mkdir -p ${corpora_dir}
+	curl -L --progress-bar -o ${corpora_dir}/oblivion_wiki.tar.gz     ${release_base_url}/$(or ${tag},${release_tag})/oblivion_wiki.tar.gz
+	curl -L --progress-bar -o ${corpora_dir}/solar_system_wiki.tar.gz ${release_base_url}/$(or ${tag},${release_tag})/solar_system_wiki.tar.gz
+	curl -L --progress-bar -o ${corpora_dir}/scipy_repo.tar.gz        ${release_base_url}/$(or ${tag},${release_tag})/scipy_repo.tar.gz
+	curl -L --progress-bar -o ${corpora_dir}/corpora_checksums.sha256 ${release_base_url}/$(or ${tag},${release_tag})/corpora_checksums.sha256
+	cd ${corpora_dir} && sha256sum --check corpora_checksums.sha256
+	tar -xzf ${corpora_dir}/oblivion_wiki.tar.gz     -C ${corpora_dir}
+	tar -xzf ${corpora_dir}/solar_system_wiki.tar.gz -C ${corpora_dir}
+	tar -xzf ${corpora_dir}/scipy_repo.tar.gz        -C ${corpora_dir}
+	rm ${corpora_dir}/oblivion_wiki.tar.gz ${corpora_dir}/solar_system_wiki.tar.gz ${corpora_dir}/scipy_repo.tar.gz
