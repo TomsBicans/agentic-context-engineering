@@ -1,0 +1,1017 @@
+[
+  {
+    "id": "ob_L1_001",
+    "corpus": "oblivion",
+    "level": 1,
+    "question": "What is a birthsign in Oblivion?",
+    "expected_facts": [
+      "birthsign",
+      "bonus",
+      "abilities",
+      "character creation",
+      "sign"
+    ]
+  },
+  {
+    "id": "ob_L1_002",
+    "corpus": "oblivion",
+    "level": 1,
+    "question": "What is the Dark Brotherhood in Oblivion?",
+    "expected_facts": [
+      "Dark Brotherhood",
+      "assassins",
+      "guild",
+      "Sithis",
+      "Night Mother"
+    ]
+  },
+  {
+    "id": "ob_L1_003",
+    "corpus": "oblivion",
+    "level": 1,
+    "question": "What is Magicka in Oblivion?",
+    "expected_facts": [
+      "Magicka",
+      "magic",
+      "spells",
+      "Intelligence",
+      "resource"
+    ]
+  },
+  {
+    "id": "ob_L1_004",
+    "corpus": "oblivion",
+    "level": 1,
+    "question": "What is an Oblivion Gate?",
+    "expected_facts": [
+      "Oblivion Gate",
+      "Daedric",
+      "portal",
+      "Mehrunes Dagon",
+      "Oblivion planes"
+    ]
+  },
+  {
+    "id": "ob_L1_005",
+    "corpus": "oblivion",
+    "level": 1,
+    "question": "What is vampirism in Oblivion?",
+    "expected_facts": [
+      "vampirism",
+      "Porphyric Hemophilia",
+      "vampire",
+      "disease",
+      "blood"
+    ]
+  },
+  {
+    "id": "ob_L1_006",
+    "corpus": "oblivion",
+    "level": 1,
+    "question": "What is the Arena faction in Oblivion?",
+    "expected_facts": [
+      "Arena",
+      "Imperial City",
+      "gladiatorial",
+      "combat",
+      "Grand Champion"
+    ]
+  },
+  {
+    "id": "ob_L1_007",
+    "corpus": "oblivion",
+    "level": 1,
+    "question": "What is the Mages Guild in Oblivion?",
+    "expected_facts": [
+      "Mages Guild",
+      "magic",
+      "Arch-Mage",
+      "Hannibal Traven",
+      "Raminus Polus"
+    ]
+  },
+  {
+    "id": "ob_L1_008",
+    "corpus": "oblivion",
+    "level": 1,
+    "question": "What is Cyrodiil in Oblivion?",
+    "expected_facts": [
+      "Cyrodiil",
+      "Imperial City",
+      "capital",
+      "Heartland",
+      "province"
+    ]
+  },
+  {
+    "id": "ob_L1_009",
+    "corpus": "oblivion",
+    "level": 1,
+    "question": "What is the Thieves Guild in Oblivion?",
+    "expected_facts": [
+      "Thieves Guild",
+      "Gray Fox",
+      "stealing",
+      "thieves",
+      "fence"
+    ]
+  },
+  {
+    "id": "ob_L1_010",
+    "corpus": "oblivion",
+    "level": 1,
+    "question": "What is the Main Quest in Oblivion?",
+    "expected_facts": [
+      "Main Quest",
+      "Martin Septim",
+      "Mehrunes Dagon",
+      "Oblivion Gates",
+      "Amulet of Kings"
+    ]
+  },
+  {
+    "id": "ob_L2_001",
+    "corpus": "oblivion",
+    "level": 2,
+    "question": "Who is Lucien Lachance in Oblivion?",
+    "expected_facts": [
+      "Lucien Lachance",
+      "Dark Brotherhood",
+      "Speaker",
+      "Black Hand"
+    ]
+  },
+  {
+    "id": "ob_L2_002",
+    "corpus": "oblivion",
+    "level": 2,
+    "question": "Who is Mankar Camoran in Oblivion?",
+    "expected_facts": [
+      "Mankar Camoran",
+      "Mehrunes Dagon",
+      "Mythic Dawn",
+      "antagonist",
+      "Paradise"
+    ]
+  },
+  {
+    "id": "ob_L2_003",
+    "corpus": "oblivion",
+    "level": 2,
+    "question": "Who is The Gray Fox in Oblivion?",
+    "expected_facts": [
+      "Gray Fox",
+      "Thieves Guild",
+      "Cowl of Nocturnal",
+      "master thief",
+      "Corvus Umbranox"
+    ]
+  },
+  {
+    "id": "ob_L2_004",
+    "corpus": "oblivion",
+    "level": 2,
+    "question": "What is the Black Hand in Oblivion?",
+    "expected_facts": [
+      "Black Hand",
+      "Dark Brotherhood",
+      "ruling council",
+      "Speaker",
+      "Listener",
+      "Silencer"
+    ]
+  },
+  {
+    "id": "ob_L2_005",
+    "corpus": "oblivion",
+    "level": 2,
+    "question": "Who is Martin Septim in Oblivion?",
+    "expected_facts": [
+      "Martin Septim",
+      "Emperor",
+      "Dragon",
+      "Akatosh",
+      "Main Quest",
+      "prince"
+    ]
+  },
+  {
+    "id": "ob_L2_006",
+    "corpus": "oblivion",
+    "level": 2,
+    "question": "What is the city of Anvil in Oblivion?",
+    "expected_facts": [
+      "Anvil",
+      "County Anvil",
+      "Gold Coast",
+      "Millona Umbranox",
+      "Countess"
+    ]
+  },
+  {
+    "id": "ob_L2_007",
+    "corpus": "oblivion",
+    "level": 2,
+    "question": "What is the city of Bravil in Oblivion?",
+    "expected_facts": [
+      "Bravil",
+      "County Bravil",
+      "Nibenay Valley",
+      "Regulus Terentius",
+      "Count"
+    ]
+  },
+  {
+    "id": "ob_L2_008",
+    "corpus": "oblivion",
+    "level": 2,
+    "question": "Who is Vicente Valtieri in Oblivion?",
+    "expected_facts": [
+      "Vicente Valtieri",
+      "Dark Brotherhood",
+      "vampire",
+      "Cheydinhal sanctuary"
+    ]
+  },
+  {
+    "id": "ob_L2_009",
+    "corpus": "oblivion",
+    "level": 2,
+    "question": "What is the city of Skingrad in Oblivion?",
+    "expected_facts": [
+      "Skingrad",
+      "County Skingrad",
+      "West Weald",
+      "Janus Hassildor",
+      "Count"
+    ]
+  },
+  {
+    "id": "ob_L2_010",
+    "corpus": "oblivion",
+    "level": 2,
+    "question": "What is the city of Bruma in Oblivion?",
+    "expected_facts": [
+      "Bruma",
+      "County Bruma",
+      "Jerall Mountains",
+      "Narina Carvain",
+      "Countess"
+    ]
+  },
+  {
+    "id": "ob_L3_001",
+    "corpus": "oblivion",
+    "level": 3,
+    "question": "What is the special racial power of the Argonian race in Oblivion?",
+    "expected_facts": [
+      "Argonian",
+      "Histskin",
+      "Waterbreathing",
+      "Resist Disease"
+    ]
+  },
+  {
+    "id": "ob_L3_002",
+    "corpus": "oblivion",
+    "level": 3,
+    "question": "What is the governing attribute of the Alchemy skill in Oblivion?",
+    "expected_facts": [
+      "Alchemy",
+      "Intelligence"
+    ]
+  },
+  {
+    "id": "ob_L3_003",
+    "corpus": "oblivion",
+    "level": 3,
+    "question": "What is the governing attribute of the Sneak skill in Oblivion?",
+    "expected_facts": [
+      "Sneak",
+      "Agility"
+    ]
+  },
+  {
+    "id": "ob_L3_004",
+    "corpus": "oblivion",
+    "level": 3,
+    "question": "In which county is the city of Chorrol located in Oblivion?",
+    "expected_facts": [
+      "Chorrol",
+      "County Chorrol",
+      "Great Forest"
+    ]
+  },
+  {
+    "id": "ob_L3_005",
+    "corpus": "oblivion",
+    "level": 3,
+    "question": "What is the governing attribute of the Acrobatics skill in Oblivion?",
+    "expected_facts": [
+      "Acrobatics",
+      "Speed"
+    ]
+  },
+  {
+    "id": "ob_L3_006",
+    "corpus": "oblivion",
+    "level": 3,
+    "question": "What disease can a player contract through vampire attacks in Oblivion?",
+    "expected_facts": [
+      "Porphyric Hemophilia",
+      "vampire",
+      "disease"
+    ]
+  },
+  {
+    "id": "ob_L3_007",
+    "corpus": "oblivion",
+    "level": 3,
+    "question": "What is the governing attribute of the Marksman skill in Oblivion?",
+    "expected_facts": [
+      "Marksman",
+      "Agility"
+    ]
+  },
+  {
+    "id": "ob_L3_008",
+    "corpus": "oblivion",
+    "level": 3,
+    "question": "What skill specialization category does the Alchemy skill belong to in Oblivion?",
+    "expected_facts": [
+      "Alchemy",
+      "Magic"
+    ]
+  },
+  {
+    "id": "ob_L3_009",
+    "corpus": "oblivion",
+    "level": 3,
+    "question": "What is the governing attribute of the Light Armor skill in Oblivion?",
+    "expected_facts": [
+      "Light Armor",
+      "Speed"
+    ]
+  },
+  {
+    "id": "ob_L3_010",
+    "corpus": "oblivion",
+    "level": 3,
+    "question": "What is the capital city of Cyrodiil in Oblivion?",
+    "expected_facts": [
+      "Imperial City",
+      "capital",
+      "Cyrodiil"
+    ]
+  },
+  {
+    "id": "ob_L4_001",
+    "corpus": "oblivion",
+    "level": 4,
+    "question": "List all playable races in Oblivion.",
+    "expected_facts": [
+      "Argonian",
+      "Breton",
+      "Dark Elf",
+      "High Elf",
+      "Imperial",
+      "Khajiit",
+      "Nord",
+      "Orc",
+      "Redguard",
+      "Wood Elf"
+    ]
+  },
+  {
+    "id": "ob_L4_002",
+    "corpus": "oblivion",
+    "level": 4,
+    "question": "List all joinable guilds and factions in Oblivion.",
+    "expected_facts": [
+      "Fighters Guild",
+      "Mages Guild",
+      "Thieves Guild",
+      "Dark Brotherhood",
+      "Arena"
+    ]
+  },
+  {
+    "id": "ob_L4_003",
+    "corpus": "oblivion",
+    "level": 4,
+    "question": "List all cities in Cyrodiil in Oblivion.",
+    "expected_facts": [
+      "Anvil",
+      "Bravil",
+      "Bruma",
+      "Cheydinhal",
+      "Chorrol",
+      "Imperial City",
+      "Kvatch",
+      "Leyawiin",
+      "Skingrad"
+    ]
+  },
+  {
+    "id": "ob_L4_004",
+    "corpus": "oblivion",
+    "level": 4,
+    "question": "List all primary attributes in Oblivion.",
+    "expected_facts": [
+      "Strength",
+      "Intelligence",
+      "Willpower",
+      "Agility",
+      "Speed",
+      "Endurance",
+      "Personality",
+      "Luck"
+    ]
+  },
+  {
+    "id": "ob_L4_005",
+    "corpus": "oblivion",
+    "level": 4,
+    "question": "List all birthsigns available in Oblivion.",
+    "expected_facts": [
+      "Apprentice",
+      "Atronach",
+      "Lady",
+      "Lord",
+      "Lover",
+      "Mage",
+      "Ritual",
+      "Serpent",
+      "Shadow",
+      "Steed",
+      "Thief",
+      "Tower",
+      "Warrior"
+    ]
+  },
+  {
+    "id": "ob_L4_006",
+    "corpus": "oblivion",
+    "level": 4,
+    "question": "List all skills in Oblivion.",
+    "expected_facts": [
+      "Alchemy",
+      "Alteration",
+      "Armorer",
+      "Athletics",
+      "Blade",
+      "Block",
+      "Blunt",
+      "Conjuration",
+      "Destruction",
+      "Hand to Hand",
+      "Heavy Armor",
+      "Illusion",
+      "Light Armor",
+      "Marksman",
+      "Mercantile",
+      "Mysticism",
+      "Restoration",
+      "Security",
+      "Sneak",
+      "Speechcraft",
+      "Acrobatics"
+    ]
+  },
+  {
+    "id": "ob_L4_007",
+    "corpus": "oblivion",
+    "level": 4,
+    "question": "List all named members of the Black Hand in the Dark Brotherhood in Oblivion.",
+    "expected_facts": [
+      "Lucien Lachance",
+      "Speaker",
+      "Listener",
+      "Black Hand"
+    ]
+  },
+  {
+    "id": "ob_L4_008",
+    "corpus": "oblivion",
+    "level": 4,
+    "question": "List all Arena ranks from lowest to highest in Oblivion.",
+    "expected_facts": [
+      "Pit Dog",
+      "Brawler",
+      "Bloodletter",
+      "Myrmidon",
+      "Warrior",
+      "Gladiator",
+      "Hero",
+      "Champion",
+      "Grand Champion"
+    ]
+  },
+  {
+    "id": "ob_L4_009",
+    "corpus": "oblivion",
+    "level": 4,
+    "question": "List all skill specialization categories in Oblivion.",
+    "expected_facts": [
+      "Combat",
+      "Magic",
+      "Stealth"
+    ]
+  },
+  {
+    "id": "ob_L4_010",
+    "corpus": "oblivion",
+    "level": 4,
+    "question": "List all major questlines available in Oblivion.",
+    "expected_facts": [
+      "Main Quest",
+      "Dark Brotherhood",
+      "Thieves Guild",
+      "Mages Guild",
+      "Fighters Guild",
+      "Arena"
+    ]
+  },
+  {
+    "id": "ob_L5_001",
+    "corpus": "oblivion",
+    "level": 5,
+    "question": "List all playable races in Oblivion and their special racial powers or abilities.",
+    "expected_facts": [
+      "Argonian",
+      "Waterbreathing",
+      "Resist Disease",
+      "Breton",
+      "Dragon Skin",
+      "Dark Elf",
+      "Ancestor Guardian",
+      "High Elf",
+      "Highborn",
+      "Imperial",
+      "Voice of the Emperor",
+      "Khajiit",
+      "Eye of Fear",
+      "Nord",
+      "Battle Cry",
+      "Orc",
+      "Berserk",
+      "Redguard",
+      "Adrenaline Rush",
+      "Wood Elf",
+      "Command Creature"
+    ]
+  },
+  {
+    "id": "ob_L5_002",
+    "corpus": "oblivion",
+    "level": 5,
+    "question": "List all primary attributes in Oblivion and the skills each governs.",
+    "expected_facts": [
+      "Strength",
+      "Blade",
+      "Blunt",
+      "Hand to Hand",
+      "Endurance",
+      "Armorer",
+      "Block",
+      "Heavy Armor",
+      "Speed",
+      "Athletics",
+      "Acrobatics",
+      "Light Armor",
+      "Agility",
+      "Security",
+      "Sneak",
+      "Marksman",
+      "Personality",
+      "Mercantile",
+      "Speechcraft",
+      "Illusion",
+      "Intelligence",
+      "Alchemy",
+      "Conjuration",
+      "Mysticism",
+      "Willpower",
+      "Alteration",
+      "Destruction",
+      "Restoration"
+    ]
+  },
+  {
+    "id": "ob_L5_003",
+    "corpus": "oblivion",
+    "level": 5,
+    "question": "List all cities in Cyrodiil in Oblivion and the county each belongs to.",
+    "expected_facts": [
+      "Anvil",
+      "County Anvil",
+      "Bravil",
+      "County Bravil",
+      "Bruma",
+      "County Bruma",
+      "Cheydinhal",
+      "County Cheydinhal",
+      "Chorrol",
+      "County Chorrol",
+      "Leyawiin",
+      "County Leyawiin",
+      "Skingrad",
+      "County Skingrad"
+    ]
+  },
+  {
+    "id": "ob_L5_004",
+    "corpus": "oblivion",
+    "level": 5,
+    "question": "List all birthsigns available in Oblivion and the primary bonus or power each provides.",
+    "expected_facts": [
+      "Apprentice",
+      "Magicka",
+      "Atronach",
+      "Stunted Magicka",
+      "Lady",
+      "Endurance",
+      "Personality",
+      "Lord",
+      "Absorption",
+      "Lover",
+      "paralyze",
+      "Mage",
+      "Magicka",
+      "Ritual",
+      "undead",
+      "Serpent",
+      "poison",
+      "Shadow",
+      "invisibility",
+      "Steed",
+      "Speed",
+      "Thief",
+      "Agility",
+      "Tower",
+      "Open",
+      "Warrior",
+      "Strength"
+    ]
+  },
+  {
+    "id": "ob_L5_005",
+    "corpus": "oblivion",
+    "level": 5,
+    "question": "List all skills in Oblivion and their governing attribute.",
+    "expected_facts": [
+      "Alchemy",
+      "Intelligence",
+      "Alteration",
+      "Willpower",
+      "Armorer",
+      "Endurance",
+      "Athletics",
+      "Speed",
+      "Blade",
+      "Strength",
+      "Block",
+      "Endurance",
+      "Blunt",
+      "Strength",
+      "Conjuration",
+      "Intelligence",
+      "Destruction",
+      "Willpower",
+      "Hand to Hand",
+      "Strength",
+      "Heavy Armor",
+      "Endurance",
+      "Illusion",
+      "Personality",
+      "Light Armor",
+      "Speed",
+      "Marksman",
+      "Agility",
+      "Mercantile",
+      "Personality",
+      "Mysticism",
+      "Intelligence",
+      "Restoration",
+      "Willpower",
+      "Security",
+      "Agility",
+      "Sneak",
+      "Agility",
+      "Speechcraft",
+      "Personality",
+      "Acrobatics",
+      "Speed"
+    ]
+  },
+  {
+    "id": "ob_L5_006",
+    "corpus": "oblivion",
+    "level": 5,
+    "question": "List all joinable factions in Oblivion and their leaders.",
+    "expected_facts": [
+      "Fighters Guild",
+      "Vilena Donton",
+      "Mages Guild",
+      "Hannibal Traven",
+      "Arch-Mage",
+      "Thieves Guild",
+      "Gray Fox",
+      "Dark Brotherhood",
+      "Lucien Lachance",
+      "Night Mother",
+      "Arena",
+      "Owyn",
+      "Grand Champion"
+    ]
+  },
+  {
+    "id": "ob_L5_007",
+    "corpus": "oblivion",
+    "level": 5,
+    "question": "List all Arena ranks in Oblivion and the number of victories required to achieve each rank.",
+    "expected_facts": [
+      "Pit Dog",
+      "Brawler",
+      "Bloodletter",
+      "Myrmidon",
+      "Warrior",
+      "Gladiator",
+      "Hero",
+      "Champion",
+      "Grand Champion"
+    ]
+  },
+  {
+    "id": "ob_L5_008",
+    "corpus": "oblivion",
+    "level": 5,
+    "question": "List all skill specialization categories in Oblivion and the skills belonging to each category.",
+    "expected_facts": [
+      "Combat",
+      "Armorer",
+      "Athletics",
+      "Blade",
+      "Block",
+      "Blunt",
+      "Hand to Hand",
+      "Heavy Armor",
+      "Magic",
+      "Alchemy",
+      "Alteration",
+      "Conjuration",
+      "Destruction",
+      "Illusion",
+      "Mysticism",
+      "Restoration",
+      "Stealth",
+      "Acrobatics",
+      "Light Armor",
+      "Marksman",
+      "Mercantile",
+      "Security",
+      "Sneak",
+      "Speechcraft"
+    ]
+  },
+  {
+    "id": "ob_L5_009",
+    "corpus": "oblivion",
+    "level": 5,
+    "question": "List all playable races in Oblivion and their starting value for the Intelligence attribute.",
+    "expected_facts": [
+      "Argonian",
+      "Breton",
+      "Dark Elf",
+      "High Elf",
+      "Imperial",
+      "Khajiit",
+      "Nord",
+      "Orc",
+      "Redguard",
+      "Wood Elf",
+      "Intelligence"
+    ]
+  },
+  {
+    "id": "ob_L5_010",
+    "corpus": "oblivion",
+    "level": 5,
+    "question": "List all cities in Cyrodiil in Oblivion and the name of their count or countess.",
+    "expected_facts": [
+      "Anvil",
+      "Millona Umbranox",
+      "Bravil",
+      "Regulus Terentius",
+      "Bruma",
+      "Narina Carvain",
+      "Cheydinhal",
+      "Andel Indarys",
+      "Chorrol",
+      "Arriana Valga",
+      "Leyawiin",
+      "Marius Caro",
+      "Skingrad",
+      "Janus Hassildor"
+    ]
+  },
+  {
+    "id": "ob_L6_001",
+    "corpus": "oblivion",
+    "level": 6,
+    "question": "List all playable races in Oblivion sorted alphabetically, including their special racial power.",
+    "expected_facts": [
+      "Argonian",
+      "Breton",
+      "Dark Elf",
+      "High Elf",
+      "Imperial",
+      "Khajiit",
+      "Nord",
+      "Orc",
+      "Redguard",
+      "Wood Elf"
+    ]
+  },
+  {
+    "id": "ob_L6_002",
+    "corpus": "oblivion",
+    "level": 6,
+    "question": "List all cities in Cyrodiil in Oblivion sorted alphabetically, including the county each belongs to.",
+    "expected_facts": [
+      "Anvil",
+      "Bravil",
+      "Bruma",
+      "Cheydinhal",
+      "Chorrol",
+      "Leyawiin",
+      "Skingrad",
+      "County"
+    ]
+  },
+  {
+    "id": "ob_L6_003",
+    "corpus": "oblivion",
+    "level": 6,
+    "question": "List all skills in Oblivion sorted alphabetically, including their governing attribute.",
+    "expected_facts": [
+      "Acrobatics",
+      "Speed",
+      "Alchemy",
+      "Intelligence",
+      "Alteration",
+      "Willpower",
+      "Armorer",
+      "Endurance",
+      "Athletics",
+      "Speed",
+      "Blade",
+      "Strength",
+      "Block",
+      "Endurance",
+      "Blunt",
+      "Strength",
+      "Conjuration",
+      "Intelligence",
+      "Destruction",
+      "Willpower"
+    ]
+  },
+  {
+    "id": "ob_L6_004",
+    "corpus": "oblivion",
+    "level": 6,
+    "question": "List all birthsigns in Oblivion sorted alphabetically, including the bonus or power each provides.",
+    "expected_facts": [
+      "Apprentice",
+      "Atronach",
+      "Lady",
+      "Lord",
+      "Lover",
+      "Mage",
+      "Ritual",
+      "Serpent",
+      "Shadow",
+      "Steed",
+      "Thief",
+      "Tower",
+      "Warrior"
+    ]
+  },
+  {
+    "id": "ob_L6_005",
+    "corpus": "oblivion",
+    "level": 6,
+    "question": "List all primary attributes in Oblivion sorted alphabetically, including at least one skill each governs.",
+    "expected_facts": [
+      "Agility",
+      "Endurance",
+      "Intelligence",
+      "Luck",
+      "Personality",
+      "Speed",
+      "Strength",
+      "Willpower"
+    ]
+  },
+  {
+    "id": "ob_L6_006",
+    "corpus": "oblivion",
+    "level": 6,
+    "question": "List all joinable factions in Oblivion sorted alphabetically, including the name of each faction's leader.",
+    "expected_facts": [
+      "Arena",
+      "Dark Brotherhood",
+      "Fighters Guild",
+      "Mages Guild",
+      "Thieves Guild",
+      "Gray Fox",
+      "Hannibal Traven",
+      "Vilena Donton"
+    ]
+  },
+  {
+    "id": "ob_L6_007",
+    "corpus": "oblivion",
+    "level": 6,
+    "question": "List all Arena ranks in Oblivion sorted from lowest to highest, including the number of victories required for each.",
+    "expected_facts": [
+      "Pit Dog",
+      "Brawler",
+      "Bloodletter",
+      "Myrmidon",
+      "Warrior",
+      "Gladiator",
+      "Hero",
+      "Champion",
+      "Grand Champion"
+    ]
+  },
+  {
+    "id": "ob_L6_008",
+    "corpus": "oblivion",
+    "level": 6,
+    "question": "List all skills in Oblivion sorted by specialization category (Combat, Magic, Stealth) and alphabetically within each category.",
+    "expected_facts": [
+      "Combat",
+      "Armorer",
+      "Athletics",
+      "Blade",
+      "Block",
+      "Blunt",
+      "Hand to Hand",
+      "Heavy Armor",
+      "Magic",
+      "Alchemy",
+      "Alteration",
+      "Conjuration",
+      "Destruction",
+      "Illusion",
+      "Mysticism",
+      "Restoration",
+      "Stealth",
+      "Acrobatics",
+      "Light Armor",
+      "Marksman",
+      "Mercantile",
+      "Security",
+      "Sneak",
+      "Speechcraft"
+    ]
+  },
+  {
+    "id": "ob_L6_009",
+    "corpus": "oblivion",
+    "level": 6,
+    "question": "List all playable races in Oblivion sorted by their base Intelligence attribute value in descending order, including their Intelligence values.",
+    "expected_facts": [
+      "High Elf",
+      "Breton",
+      "Argonian",
+      "Dark Elf",
+      "Intelligence"
+    ]
+  },
+  {
+    "id": "ob_L6_010",
+    "corpus": "oblivion",
+    "level": 6,
+    "question": "List all cities in Cyrodiil in Oblivion sorted by county name alphabetically, including the name of each city's count or countess.",
+    "expected_facts": [
+      "Anvil",
+      "Bravil",
+      "Bruma",
+      "Cheydinhal",
+      "Chorrol",
+      "Leyawiin",
+      "Skingrad",
+      "Millona Umbranox",
+      "Regulus Terentius",
+      "Narina Carvain",
+      "Andel Indarys",
+      "Arriana Valga",
+      "Marius Caro",
+      "Janus Hassildor"
+    ]
+  }
+]

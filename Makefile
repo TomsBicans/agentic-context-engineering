@@ -142,7 +142,7 @@ ace_h:
 	uv run ace -h
 
 ace_query:
-	uv run ace query "${q}" \
+	uv run ace query ${q} \
 		--path-to-corpora "${corpus}" \
 		--format ${fmt} \
 		--k ${k} \
@@ -150,7 +150,7 @@ ace_query:
 		--num-ctx ${ctx}
 
 ace_query_json:
-	uv run ace query "${q}" \
+	uv run ace query ${q} \
 		--path-to-corpora "${corpus}" \
 		--format json \
 		--k ${k} \
@@ -158,7 +158,7 @@ ace_query_json:
 		--num-ctx ${ctx}
 
 ace_query_no_stream:
-	uv run ace query "${q}" \
+	uv run ace query ${q} \
 		--path-to-corpora "${corpus}" \
 		--format ${fmt} \
 		--k ${k} \
@@ -170,3 +170,45 @@ ace_query_no_stream:
 # Usage: make ace [corpus=./path]
 ace:
 	uv run ace --path-to-corpora "${corpus}"
+
+# Corpora release — archives all scraped corpora and publishes them as a GitHub Release.
+# Usage: make release_corpora tag=v1.0-corpora
+# Requires: gh auth login with repo scope
+corpora_dir=./corpora/scraped_data
+corpora_build_dir=./corpora/release_build
+release_tag=v1.0-corpora
+
+release_corpora:
+	mkdir -p ${corpora_build_dir}
+	tar --exclude="*.claw*" --exclude=".gitignore" --exclude="CLAUDE.md" -czf ${corpora_build_dir}/oblivion_wiki.tar.gz     -C ${corpora_dir} oblivion_wiki/
+	tar --exclude="*.claw*" --exclude=".gitignore" --exclude="CLAUDE.md" -czf ${corpora_build_dir}/solar_system_wiki.tar.gz -C ${corpora_dir} solar_system_wiki/
+	tar --exclude="*.claw*" --exclude=".gitignore" --exclude="CLAUDE.md" -czf ${corpora_build_dir}/scipy_repo.tar.gz        -C ${corpora_dir} scipy_repo/
+	cd ${corpora_build_dir} && sha256sum oblivion_wiki.tar.gz solar_system_wiki.tar.gz scipy_repo.tar.gz > corpora_checksums.sha256
+	cp ${corpora_build_dir}/corpora_checksums.sha256 ./corpora/corpora_checksums.sha256
+	gh release create $(or ${tag},${release_tag}) \
+		${corpora_build_dir}/oblivion_wiki.tar.gz \
+		${corpora_build_dir}/solar_system_wiki.tar.gz \
+		${corpora_build_dir}/scipy_repo.tar.gz \
+		${corpora_build_dir}/corpora_checksums.sha256 \
+		--title "Experiment corpora $(or ${tag},${release_tag})" \
+		--notes "Fixed corpus snapshots used in thesis experiments. Verify integrity with corpora_checksums.sha256."
+	rm -rf ${corpora_build_dir}
+
+# Download corpora from GitHub Release and extract locally.
+# No authentication required — uses public release URLs via curl.
+# Usage: make download_corpora
+#        make download_corpora tag=v1.1-corpora
+github_repo=TomsBicans/agentic-context-engineering
+release_base_url=https://github.com/${github_repo}/releases/download
+
+download_corpora:
+	mkdir -p ${corpora_dir}
+	curl -L --progress-bar -o ${corpora_dir}/oblivion_wiki.tar.gz     ${release_base_url}/$(or ${tag},${release_tag})/oblivion_wiki.tar.gz
+	curl -L --progress-bar -o ${corpora_dir}/solar_system_wiki.tar.gz ${release_base_url}/$(or ${tag},${release_tag})/solar_system_wiki.tar.gz
+	curl -L --progress-bar -o ${corpora_dir}/scipy_repo.tar.gz        ${release_base_url}/$(or ${tag},${release_tag})/scipy_repo.tar.gz
+	curl -L --progress-bar -o ${corpora_dir}/corpora_checksums.sha256 ${release_base_url}/$(or ${tag},${release_tag})/corpora_checksums.sha256
+	cd ${corpora_dir} && sha256sum --check corpora_checksums.sha256
+	tar -xzf ${corpora_dir}/oblivion_wiki.tar.gz     -C ${corpora_dir}
+	tar -xzf ${corpora_dir}/solar_system_wiki.tar.gz -C ${corpora_dir}
+	tar -xzf ${corpora_dir}/scipy_repo.tar.gz        -C ${corpora_dir}
+	rm ${corpora_dir}/oblivion_wiki.tar.gz ${corpora_dir}/solar_system_wiki.tar.gz ${corpora_dir}/scipy_repo.tar.gz

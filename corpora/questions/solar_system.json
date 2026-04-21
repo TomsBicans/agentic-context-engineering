@@ -1,0 +1,839 @@
+[
+  {
+    "id": "ss_L1_001",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is a planet according to the IAU definition?",
+    "expected_facts": [
+      "orbits the Sun",
+      "hydrostatic equilibrium",
+      "cleared the neighbourhood",
+      "celestial body"
+    ]
+  },
+  {
+    "id": "ss_L1_002",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is a dwarf planet?",
+    "expected_facts": [
+      "orbits the Sun",
+      "has not cleared its orbital neighbourhood",
+      "dwarf planet",
+      "Ceres",
+      "Pluto"
+    ]
+  },
+  {
+    "id": "ss_L1_003",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is a natural satellite?",
+    "expected_facts": [
+      "natural satellite",
+      "moon",
+      "orbits a larger body",
+      "moons"
+    ]
+  },
+  {
+    "id": "ss_L1_004",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is an asteroid?",
+    "expected_facts": [
+      "asteroid",
+      "rocky",
+      "orbits the Sun",
+      "small Solar System body"
+    ]
+  },
+  {
+    "id": "ss_L1_005",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is a comet?",
+    "expected_facts": [
+      "comet",
+      "icy",
+      "coma",
+      "tail",
+      "nucleus"
+    ]
+  },
+  {
+    "id": "ss_L1_006",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is the asteroid belt?",
+    "expected_facts": [
+      "asteroid belt",
+      "between Mars",
+      "Jupiter",
+      "Ceres"
+    ]
+  },
+  {
+    "id": "ss_L1_007",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is a gas giant?",
+    "expected_facts": [
+      "gas giant",
+      "hydrogen",
+      "helium",
+      "Jupiter",
+      "Saturn"
+    ]
+  },
+  {
+    "id": "ss_L1_008",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is an ice giant planet?",
+    "expected_facts": [
+      "ice giant",
+      "Uranus",
+      "Neptune",
+      "water",
+      "methane",
+      "ammonia"
+    ]
+  },
+  {
+    "id": "ss_L1_009",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is the Kuiper Belt?",
+    "expected_facts": [
+      "Kuiper belt",
+      "beyond Neptune",
+      "trans-Neptunian",
+      "icy bodies"
+    ]
+  },
+  {
+    "id": "ss_L1_010",
+    "corpus": "solar_system",
+    "level": 1,
+    "question": "What is the Oort Cloud?",
+    "expected_facts": [
+      "Oort cloud",
+      "comets",
+      "distant",
+      "Solar System"
+    ]
+  },
+  {
+    "id": "ss_L2_001",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Jupiter?",
+    "expected_facts": [
+      "largest planet",
+      "gas giant",
+      "hydrogen",
+      "helium",
+      "Great Red Spot",
+      "97 confirmed satellites",
+      "Galilean moons"
+    ]
+  },
+  {
+    "id": "ss_L2_002",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Saturn?",
+    "expected_facts": [
+      "ring system",
+      "gas giant",
+      "hydrogen",
+      "helium",
+      "274 confirmed satellites",
+      "hexagon-shaped storms"
+    ]
+  },
+  {
+    "id": "ss_L2_003",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Mars?",
+    "expected_facts": [
+      "fourth planet",
+      "red",
+      "iron oxide",
+      "two moons",
+      "Phobos",
+      "Deimos",
+      "687 Earth days"
+    ]
+  },
+  {
+    "id": "ss_L2_004",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is the Sun?",
+    "expected_facts": [
+      "star",
+      "332,900 Earth masses",
+      "99.86%",
+      "hydrogen",
+      "helium",
+      "G2-type",
+      "main-sequence"
+    ]
+  },
+  {
+    "id": "ss_L2_005",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Venus?",
+    "expected_facts": [
+      "second planet",
+      "carbon dioxide",
+      "atmospheric pressure",
+      "over 400 \u00b0C",
+      "no natural satellites",
+      "greenhouse"
+    ]
+  },
+  {
+    "id": "ss_L2_006",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Mercury?",
+    "expected_facts": [
+      "smallest planet",
+      "closest to the Sun",
+      "no natural satellites",
+      "surface temperature",
+      "420 \u00b0C",
+      "no atmosphere"
+    ]
+  },
+  {
+    "id": "ss_L2_007",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Uranus?",
+    "expected_facts": [
+      "ice giant",
+      "axial tilt",
+      "29 confirmed satellites",
+      "cyan",
+      "rotates on its side"
+    ]
+  },
+  {
+    "id": "ss_L2_008",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Neptune?",
+    "expected_facts": [
+      "furthest planet",
+      "ice giant",
+      "16 confirmed satellites",
+      "Triton",
+      "cyan",
+      "29.9"
+    ]
+  },
+  {
+    "id": "ss_L2_009",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Pluto?",
+    "expected_facts": [
+      "dwarf planet",
+      "Charon",
+      "Kuiper belt",
+      "trans-Neptunian"
+    ]
+  },
+  {
+    "id": "ss_L2_010",
+    "corpus": "solar_system",
+    "level": 2,
+    "question": "What is Earth?",
+    "expected_facts": [
+      "life",
+      "liquid water",
+      "Moon",
+      "one natural satellite",
+      "nitrogen",
+      "oxygen",
+      "atmosphere",
+      "plate tectonics"
+    ]
+  },
+  {
+    "id": "ss_L3_001",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the mass of Jupiter?",
+    "expected_facts": [
+      "1.898",
+      "10^27 kg",
+      "317.8",
+      "Earth"
+    ]
+  },
+  {
+    "id": "ss_L3_002",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the orbital period of Mars?",
+    "expected_facts": [
+      "686.980",
+      "1.881",
+      "687 Earth days"
+    ]
+  },
+  {
+    "id": "ss_L3_003",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the mean surface temperature of Venus?",
+    "expected_facts": [
+      "over 400 \u00b0C",
+      "752 \u00b0F",
+      "greenhouse"
+    ]
+  },
+  {
+    "id": "ss_L3_004",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the equatorial diameter of Earth?",
+    "expected_facts": [
+      "12,742",
+      "km",
+      "7,918"
+    ]
+  },
+  {
+    "id": "ss_L3_005",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "How many known moons does Saturn have?",
+    "expected_facts": [
+      "274",
+      "confirmed satellites"
+    ]
+  },
+  {
+    "id": "ss_L3_006",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the average distance from Earth to the Sun in astronomical units?",
+    "expected_facts": [
+      "1 AU",
+      "astronomical unit",
+      "1.000"
+    ]
+  },
+  {
+    "id": "ss_L3_007",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the orbital period of Neptune?",
+    "expected_facts": [
+      "60,182",
+      "164.8",
+      "years"
+    ]
+  },
+  {
+    "id": "ss_L3_008",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the mass of the Sun?",
+    "expected_facts": [
+      "332,900 Earth masses",
+      "99.86%",
+      "Solar System"
+    ]
+  },
+  {
+    "id": "ss_L3_009",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the surface gravity of Mars relative to Earth?",
+    "expected_facts": [
+      "0.376",
+      "3.72",
+      "Earth"
+    ]
+  },
+  {
+    "id": "ss_L3_010",
+    "corpus": "solar_system",
+    "level": 3,
+    "question": "What is the rotational period of Mercury?",
+    "expected_facts": [
+      "58.6",
+      "days",
+      "sidereal"
+    ]
+  },
+  {
+    "id": "ss_L4_001",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all eight planets of the Solar System.",
+    "expected_facts": [
+      "Mercury",
+      "Venus",
+      "Earth",
+      "Mars",
+      "Jupiter",
+      "Saturn",
+      "Uranus",
+      "Neptune"
+    ]
+  },
+  {
+    "id": "ss_L4_002",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all four Galilean moons of Jupiter.",
+    "expected_facts": [
+      "Io",
+      "Europa",
+      "Ganymede",
+      "Callisto"
+    ]
+  },
+  {
+    "id": "ss_L4_003",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all terrestrial (rocky) planets in the Solar System.",
+    "expected_facts": [
+      "Mercury",
+      "Venus",
+      "Earth",
+      "Mars"
+    ]
+  },
+  {
+    "id": "ss_L4_004",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all currently recognized dwarf planets in the Solar System.",
+    "expected_facts": [
+      "Ceres",
+      "Pluto",
+      "Eris",
+      "Makemake",
+      "Haumea"
+    ]
+  },
+  {
+    "id": "ss_L4_005",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all known moons of Mars.",
+    "expected_facts": [
+      "Phobos",
+      "Deimos"
+    ]
+  },
+  {
+    "id": "ss_L4_006",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all known moons of Pluto.",
+    "expected_facts": [
+      "Charon",
+      "Hydra",
+      "Nix",
+      "Kerberos",
+      "Styx"
+    ]
+  },
+  {
+    "id": "ss_L4_007",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all planets in the Solar System that have a ring system.",
+    "expected_facts": [
+      "Jupiter",
+      "Saturn",
+      "Uranus",
+      "Neptune"
+    ]
+  },
+  {
+    "id": "ss_L4_008",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all outer planets of the Solar System (beyond the asteroid belt).",
+    "expected_facts": [
+      "Jupiter",
+      "Saturn",
+      "Uranus",
+      "Neptune"
+    ]
+  },
+  {
+    "id": "ss_L4_009",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all inner planets of the Solar System (inside the asteroid belt).",
+    "expected_facts": [
+      "Mercury",
+      "Venus",
+      "Earth",
+      "Mars"
+    ]
+  },
+  {
+    "id": "ss_L4_010",
+    "corpus": "solar_system",
+    "level": 4,
+    "question": "List all ice giant planets in the Solar System.",
+    "expected_facts": [
+      "Uranus",
+      "Neptune"
+    ]
+  },
+  {
+    "id": "ss_L5_001",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all eight planets of the Solar System and their orbital periods.",
+    "expected_facts": [
+      "Mercury",
+      "87.969",
+      "Venus",
+      "224.701",
+      "Earth",
+      "365.256",
+      "Mars",
+      "686.980",
+      "Jupiter",
+      "4,332.589",
+      "Saturn",
+      "10,759.22",
+      "Uranus",
+      "30,688.5",
+      "Neptune",
+      "60,182"
+    ]
+  },
+  {
+    "id": "ss_L5_002",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all four Galilean moons of Jupiter and their approximate diameters.",
+    "expected_facts": [
+      "Io",
+      "3660",
+      "Europa",
+      "3121",
+      "Ganymede",
+      "5268",
+      "Callisto",
+      "4820"
+    ]
+  },
+  {
+    "id": "ss_L5_003",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all four terrestrial planets and their masses.",
+    "expected_facts": [
+      "Mercury",
+      "Venus",
+      "Earth",
+      "Mars",
+      "mass"
+    ]
+  },
+  {
+    "id": "ss_L5_004",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all known moons of Mars and their orbital periods around Mars.",
+    "expected_facts": [
+      "Phobos",
+      "Deimos"
+    ]
+  },
+  {
+    "id": "ss_L5_005",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all recognized dwarf planets and the region of the Solar System each is located in.",
+    "expected_facts": [
+      "Ceres",
+      "asteroid belt",
+      "Pluto",
+      "Eris",
+      "Makemake",
+      "Haumea",
+      "Kuiper belt",
+      "trans-Neptunian"
+    ]
+  },
+  {
+    "id": "ss_L5_006",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all eight planets and their number of known natural satellites.",
+    "expected_facts": [
+      "Mercury",
+      "Venus",
+      "Earth",
+      "Mars",
+      "Jupiter",
+      "97",
+      "Saturn",
+      "274",
+      "Uranus",
+      "29",
+      "Neptune",
+      "16"
+    ]
+  },
+  {
+    "id": "ss_L5_007",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all four Galilean moons of Jupiter and their average orbital distances from Jupiter.",
+    "expected_facts": [
+      "Io",
+      "421,800",
+      "Europa",
+      "671,100",
+      "Ganymede",
+      "1,070,400",
+      "Callisto",
+      "1,882,700"
+    ]
+  },
+  {
+    "id": "ss_L5_008",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all known moons of Pluto and their approximate diameters.",
+    "expected_facts": [
+      "Charon",
+      "Hydra",
+      "Nix",
+      "Kerberos",
+      "Styx"
+    ]
+  },
+  {
+    "id": "ss_L5_009",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all outer planets of the Solar System and their orbital periods.",
+    "expected_facts": [
+      "Jupiter",
+      "11.862",
+      "Saturn",
+      "29.457",
+      "Uranus",
+      "84.020",
+      "Neptune",
+      "164.8"
+    ]
+  },
+  {
+    "id": "ss_L5_010",
+    "corpus": "solar_system",
+    "level": 5,
+    "question": "List all eight planets and their approximate masses.",
+    "expected_facts": [
+      "Jupiter",
+      "317.8",
+      "Saturn",
+      "Earth",
+      "Mars",
+      "Mercury",
+      "Venus",
+      "Uranus",
+      "Neptune",
+      "mass"
+    ]
+  },
+  {
+    "id": "ss_L6_001",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all eight planets of the Solar System sorted by their average distance from the Sun in ascending order, including their distances in AU.",
+    "expected_facts": [
+      "Mercury",
+      "0.31",
+      "Venus",
+      "0.72",
+      "Earth",
+      "0.98",
+      "Mars",
+      "1.38",
+      "Jupiter",
+      "4.95",
+      "Saturn",
+      "9.08",
+      "Uranus",
+      "18.3",
+      "Neptune",
+      "29.9"
+    ]
+  },
+  {
+    "id": "ss_L6_002",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all eight planets sorted by their orbital period in ascending order, including their orbital periods.",
+    "expected_facts": [
+      "Mercury",
+      "87.969",
+      "Venus",
+      "224.701",
+      "Earth",
+      "365.256",
+      "Mars",
+      "686.980",
+      "Jupiter",
+      "4,332",
+      "Saturn",
+      "10,759",
+      "Uranus",
+      "30,688",
+      "Neptune",
+      "60,182"
+    ]
+  },
+  {
+    "id": "ss_L6_003",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all four Galilean moons of Jupiter sorted by their orbital period in ascending order, including their orbital periods.",
+    "expected_facts": [
+      "Io",
+      "1.769",
+      "Europa",
+      "3.551",
+      "Ganymede",
+      "7.155",
+      "Callisto",
+      "16.7"
+    ]
+  },
+  {
+    "id": "ss_L6_004",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all four terrestrial planets sorted by their mass in descending order, including their masses.",
+    "expected_facts": [
+      "Earth",
+      "Venus",
+      "Mars",
+      "Mercury",
+      "mass"
+    ]
+  },
+  {
+    "id": "ss_L6_005",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all eight planets sorted by their equatorial diameter in descending order, including their diameters.",
+    "expected_facts": [
+      "Jupiter",
+      "Saturn",
+      "Uranus",
+      "Neptune",
+      "Earth",
+      "Venus",
+      "Mars",
+      "Mercury",
+      "diameter"
+    ]
+  },
+  {
+    "id": "ss_L6_006",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all eight planets sorted by their number of known moons in descending order, including the moon counts.",
+    "expected_facts": [
+      "Saturn",
+      "274",
+      "Jupiter",
+      "97",
+      "Uranus",
+      "29",
+      "Neptune",
+      "16",
+      "Mars",
+      "2",
+      "Earth",
+      "1",
+      "Mercury",
+      "0",
+      "Venus",
+      "0"
+    ]
+  },
+  {
+    "id": "ss_L6_007",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all currently recognized dwarf planets sorted by their average distance from the Sun in ascending order, including their distances.",
+    "expected_facts": [
+      "Ceres",
+      "Pluto",
+      "Haumea",
+      "Makemake",
+      "Eris"
+    ]
+  },
+  {
+    "id": "ss_L6_008",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all four Galilean moons of Jupiter sorted by their average orbital distance from Jupiter in ascending order, including their distances.",
+    "expected_facts": [
+      "Io",
+      "421,800",
+      "Europa",
+      "671,100",
+      "Ganymede",
+      "1,070,400",
+      "Callisto",
+      "1,882,700"
+    ]
+  },
+  {
+    "id": "ss_L6_009",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all known moons of Pluto sorted by their orbital period in ascending order, including their orbital periods.",
+    "expected_facts": [
+      "Charon",
+      "Styx",
+      "Nix",
+      "Kerberos",
+      "Hydra"
+    ]
+  },
+  {
+    "id": "ss_L6_010",
+    "corpus": "solar_system",
+    "level": 6,
+    "question": "List all four inner planets sorted by their orbital period in ascending order, including their orbital periods.",
+    "expected_facts": [
+      "Mercury",
+      "87.969",
+      "Venus",
+      "224.701",
+      "Earth",
+      "365.256",
+      "Mars",
+      "686.980"
+    ]
+  }
+]
