@@ -183,11 +183,7 @@ release_corpora:
 	tar --exclude="*.claw*" --exclude=".gitignore" --exclude="CLAUDE.md" -czf ${corpora_build_dir}/oblivion_wiki.tar.gz     -C ${corpora_dir} oblivion_wiki/
 	tar --exclude="*.claw*" --exclude=".gitignore" --exclude="CLAUDE.md" -czf ${corpora_build_dir}/solar_system_wiki.tar.gz -C ${corpora_dir} solar_system_wiki/
 	tar --exclude="*.claw*" --exclude=".gitignore" --exclude="CLAUDE.md" -czf ${corpora_build_dir}/scipy_repo.tar.gz        -C ${corpora_dir} scipy_repo/
-	sha256sum \
-		${corpora_build_dir}/oblivion_wiki.tar.gz \
-		${corpora_build_dir}/solar_system_wiki.tar.gz \
-		${corpora_build_dir}/scipy_repo.tar.gz \
-		> ${corpora_build_dir}/corpora_checksums.sha256
+	cd ${corpora_build_dir} && sha256sum oblivion_wiki.tar.gz solar_system_wiki.tar.gz scipy_repo.tar.gz > corpora_checksums.sha256
 	cp ${corpora_build_dir}/corpora_checksums.sha256 ./corpora/corpora_checksums.sha256
 	gh release create $(or ${tag},${release_tag}) \
 		${corpora_build_dir}/oblivion_wiki.tar.gz \
