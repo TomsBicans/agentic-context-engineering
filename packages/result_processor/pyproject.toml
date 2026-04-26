@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "agent",
     "pandas>=3.0.2",
     "plotly>=6.7.0",
     "pydantic>=2.12.5",
@@ -22,3 +23,6 @@ result-processor = "result_processor:main"
 [build-system]
 requires = ["uv_build>=0.9.26,<0.10.0"]
 build-backend = "uv_build"
+
+[tool.uv.sources]
+agent = { workspace = true, editable = true }
