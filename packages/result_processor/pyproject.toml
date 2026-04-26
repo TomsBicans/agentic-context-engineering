@@ -1,7 +1,7 @@
 [project]
 name = "result-processor"
 version = "0.1.0"
-description = "Add your description here"
+description = "Post-experiment processing: A2 examiner agent, charts, LaTeX tables, Streamlit dashboard"
 readme = "README.md"
 authors = [
     { name = "Toms Bicāns", email = "tomsbicans@gmail.com" }
@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.scripts]
-result-processor = "result_processor:main"
+result-processor = "result_processor.main:main"
 
 [build-system]
 requires = ["uv_build>=0.9.26,<0.10.0"]
