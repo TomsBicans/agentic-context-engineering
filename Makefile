@@ -261,3 +261,59 @@ ace_experiment_dry:
 		--num-ctx ${ctx} \
 		--path-to-corpora "${corpus}" \
 		--dry-run
+
+# Result processor — A2 examiner analysis, charts, LaTeX tables, dashboard.
+# All artefacts are produced from the JSONL files written by experiment_runner.
+#
+# Variables (override on command line):
+#   examiner_model — model used for A2 verification (default: qwen3:4b)
+#   ctx            — context window for the examiner (default: 8192, set above)
+#   corpora_root   — root containing oblivion_wiki/, solar_system_wiki/, scipy_repo/
+#   figures_dir    — output directory for charts/tables (default: ./figures)
+#   port           — Streamlit port (default: 8501)
+
+analysis_results_dir=./analysis_results
+figures_dir=./figures
+corpora_root=./corpora/scraped_data
+examiner_model=qwen3:4b
+port=8501
+
+result_processor_h:
+	uv run --package result_processor result-processor --help
+
+# Analyze: run the A2 examiner over experiment_results/*.jsonl.
+# Idempotent — already-analyzed runs are skipped unless `resume=0` is set.
+analyze:
+	uv run --package result_processor result-processor analyze \
+		--experiment-results-dir ${experiment_results_dir} \
+		--output-dir ${analysis_results_dir} \
+		--path-to-corpora ${corpora_root} \
+		--examiner-model ${examiner_model} \
+		--num-ctx ${ctx}
+
+# Re-analyze everything from scratch.
+analyze_force:
+	uv run --package result_processor result-processor analyze \
+		--experiment-results-dir ${experiment_results_dir} \
+		--output-dir ${analysis_results_dir} \
+		--path-to-corpora ${corpora_root} \
+		--examiner-model ${examiner_model} \
+		--num-ctx ${ctx} \
+		--no-resume
+
+# Visualize: generate Plotly figures (HTML by default) and LaTeX tables.
+# Override formats with: make visualize formats="html png pdf"
+formats=html
+visualize:
+	uv run --package result_processor result-processor visualize \
+		--experiment-results-dir ${experiment_results_dir} \
+		--analysis-results-dir ${analysis_results_dir} \
+		--output-dir ${figures_dir} \
+		--formats ${formats}
+
+# Streamlit dashboard — interactive UI for browsing runs and dispatching analyze/visualize.
+dashboard:
+	uv run --package result_processor result-processor dashboard \
+		--port ${port} \
+		--experiment-results-dir ${experiment_results_dir} \
+		--analysis-results-dir ${analysis_results_dir}
