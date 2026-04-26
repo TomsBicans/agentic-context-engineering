@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-experiment-runner = "experiment_runner:main"
+experiment-runner = "experiment_runner.main:main"
 
 [build-system]
 requires = ["uv_build>=0.9.26,<0.10.0"]
