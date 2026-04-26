@@ -7,7 +7,9 @@ authors = [
     { name = "Toms Bicāns", email = "tomsbicans@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "pydantic>=2.12.5",
+]
 
 [project.scripts]
 experiment-runner = "experiment_runner:main"
