@@ -73,11 +73,11 @@ def _sidebar() -> dict:
     st.sidebar.header("Configuration")
     experiment_dir = st.sidebar.text_input(
         "experiment_results_dir",
-        value=_default_dir("RP_EXPERIMENT_RESULTS_DIR", "./experiment_results"),
+        value=_default_dir("RP_EXPERIMENT_RESULTS_DIR", "./data/experiment_results"),
     )
     analysis_dir = st.sidebar.text_input(
         "analysis_results_dir",
-        value=_default_dir("RP_ANALYSIS_RESULTS_DIR", "./analysis_results"),
+        value=_default_dir("RP_ANALYSIS_RESULTS_DIR", "./data/analysis_results"),
     )
     corpora_root = st.sidebar.text_input(
         "path_to_corpora",
@@ -263,7 +263,7 @@ def _tab_actions(cfg: dict, filtered: pd.DataFrame) -> None:
 
     st.markdown("### Visualize")
     cols = st.columns([3, 1])
-    output_dir = cols[0].text_input("Output directory", value="./figures")
+    output_dir = cols[0].text_input("Output directory", value="./data/figures")
     formats = cols[1].multiselect("Formats", ["html", "png", "pdf", "svg"], default=["html"])
     if st.button("▶ Run visualize", type="primary", use_container_width=True):
         args = _cli_path() + [

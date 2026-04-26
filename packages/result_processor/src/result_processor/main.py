@@ -8,13 +8,13 @@ def _add_analyze_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--experiment-results-dir",
         dest="experiment_results_dir",
-        default="./experiment_results",
+        default="./data/experiment_results",
         help="Directory containing RunResult JSONL files",
     )
     parser.add_argument(
         "--output-dir",
         dest="output_dir",
-        default="./analysis_results",
+        default="./data/analysis_results",
         help="Directory where AnalysisResult JSONL files are written",
     )
     parser.add_argument(
@@ -56,19 +56,19 @@ def _add_visualize_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--experiment-results-dir",
         dest="experiment_results_dir",
-        default="./experiment_results",
+        default="./data/experiment_results",
         help="Directory containing RunResult JSONL files",
     )
     parser.add_argument(
         "--analysis-results-dir",
         dest="analysis_results_dir",
-        default="./analysis_results",
+        default="./data/analysis_results",
         help="Directory containing AnalysisResult JSONL files",
     )
     parser.add_argument(
         "--output-dir",
         dest="output_dir",
-        default="./figures",
+        default="./data/figures",
         help="Directory where Plotly figures and LaTeX tables are written",
     )
     parser.add_argument(
@@ -86,12 +86,12 @@ def _add_dashboard_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--experiment-results-dir",
         dest="experiment_results_dir",
-        default="./experiment_results",
+        default="./data/experiment_results",
     )
     parser.add_argument(
         "--analysis-results-dir",
         dest="analysis_results_dir",
-        default="./analysis_results",
+        default="./data/analysis_results",
     )
 
 

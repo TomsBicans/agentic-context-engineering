@@ -224,7 +224,8 @@ download_corpora:
 #   ctx         — context window size     (default: 8192, set above)
 #   corpus      — path to corpus data dir (default: ./corpora/scraped_data/solar_system_wiki)
 
-experiment_results_dir=./experiment_results
+data_dir=./data
+experiment_results_dir=${data_dir}/experiment_results
 questions_dir=./corpora/questions
 corpus_id=solar_system_wiki
 questions_file=${questions_dir}/solar_system.json
@@ -269,11 +270,11 @@ ace_experiment_dry:
 #   examiner_model — model used for A2 verification (default: qwen3:4b)
 #   ctx            — context window for the examiner (default: 8192, set above)
 #   corpora_root   — root containing oblivion_wiki/, solar_system_wiki/, scipy_repo/
-#   figures_dir    — output directory for charts/tables (default: ./figures)
+#   figures_dir    — output directory for charts/tables (default: ./data/figures)
 #   port           — Streamlit port (default: 8501)
 
-analysis_results_dir=./analysis_results
-figures_dir=./figures
+analysis_results_dir=${data_dir}/analysis_results
+figures_dir=${data_dir}/figures
 corpora_root=./corpora/scraped_data
 examiner_model=qwen3:4b
 port=8501
