@@ -212,3 +212,52 @@ download_corpora:
 	tar -xzf ${corpora_dir}/solar_system_wiki.tar.gz -C ${corpora_dir}
 	tar -xzf ${corpora_dir}/scipy_repo.tar.gz        -C ${corpora_dir}
 	rm ${corpora_dir}/oblivion_wiki.tar.gz ${corpora_dir}/solar_system_wiki.tar.gz ${corpora_dir}/scipy_repo.tar.gz
+
+# Experiment runner
+# Results are written to experiment_results/ as timestamped JSONL files.
+# Every invocation produces a new file — no run is ever overwritten.
+#
+# Variables (override on command line):
+#   corpus_id   — which corpus to query  (default: solar_system_wiki)
+#   q_id        — single question ID to run (e.g. ss_L1_001)
+#   model       — LLM model name          (default: qwen3:4b, set above)
+#   ctx         — context window size     (default: 8192, set above)
+#   corpus      — path to corpus data dir (default: ./corpora/scraped_data/solar_system_wiki)
+
+experiment_results_dir=./experiment_results
+questions_dir=./corpora/questions
+corpus_id=solar_system_wiki
+questions_file=${questions_dir}/solar_system.json
+q_id=ss_L1_001 ss_L2_001
+
+experiment_runner_h:
+	uv run --package experiment_runner experiment-runner --help
+
+# Run a single question through the ACE system.
+# Usage:
+#   make ace_experiment_single
+#   make ace_experiment_single q_id=ss_L2_003
+#   make ace_experiment_single corpus_id=oblivion_wiki questions_file=./corpora/questions/oblivion.json corpus=./corpora/scraped_data/oblivion_wiki q_id=ob_L1_001
+ace_experiment_single:
+	uv run --package experiment_runner experiment-runner run \
+		--system ace \
+		--corpus ${corpus_id} \
+		--questions-file ${questions_file} \
+		--question-ids ${q_id} \
+		--output-dir ${experiment_results_dir} \
+		--model ${model} \
+		--num-ctx ${ctx} \
+		--path-to-corpora "${corpus}"
+
+# Dry-run: print the plan without executing.
+ace_experiment_dry:
+	uv run --package experiment_runner experiment-runner run \
+		--system ace \
+		--corpus ${corpus_id} \
+		--questions-file ${questions_file} \
+		--question-ids ${q_id} \
+		--output-dir ${experiment_results_dir} \
+		--model ${model} \
+		--num-ctx ${ctx} \
+		--path-to-corpora "${corpus}" \
+		--dry-run

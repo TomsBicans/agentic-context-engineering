@@ -81,6 +81,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=AutomationLevel.FULL.value,
         help="How much of the run is automated",
     )
+    run_parser.add_argument(
+        "--num-ctx",
+        type=int,
+        default=8192,
+        dest="num_ctx",
+        help="Context window size passed to the local inference engine",
+    )
+    run_parser.add_argument(
+        "--reasoning-enabled",
+        dest="reasoning_enabled",
+        action="store_true",
+        default=False,
+        help="Enable chain-of-thought / reasoning mode for the model",
+    )
 
     return parser.parse_args(argv)
 
