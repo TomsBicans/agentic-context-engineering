@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "agent",
+    "experiment-runner",
     "pandas>=3.0.2",
     "plotly>=6.7.0",
     "pydantic>=2.12.5",
@@ -27,3 +28,4 @@ build-backend = "uv_build"
 
 [tool.uv.sources]
 agent = { workspace = true, editable = true }
+experiment-runner = { workspace = true, editable = true }
