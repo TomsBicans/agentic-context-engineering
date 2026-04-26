@@ -1482,6 +1482,7 @@ source = { editable = "packages/result_processor" }
 dependencies = [
     { name = "pandas" },
     { name = "plotly" },
+    { name = "pydantic" },
     { name = "streamlit" },
 ]
 
@@ -1489,6 +1490,7 @@ dependencies = [
 requires-dist = [
     { name = "pandas", specifier = ">=3.0.2" },
     { name = "plotly", specifier = ">=6.7.0" },
+    { name = "pydantic", specifier = ">=2.12.5" },
     { name = "streamlit", specifier = ">=1.56.0" },
 ]
 
