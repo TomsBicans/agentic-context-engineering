@@ -10,6 +10,7 @@ requires-python = ">=3.13"
 dependencies = [
     "agent",
     "experiment-runner",
+    "kaleido>=1.2.0",
     "pandas>=3.0.2",
     "plotly>=6.7.0",
     "pydantic>=2.12.5",
