@@ -15,4 +15,5 @@ members = [
     "packages/cli",
     "packages/corpus_scraper",
     "packages/experiment_runner",
+    "packages/result_processor",
 ]
