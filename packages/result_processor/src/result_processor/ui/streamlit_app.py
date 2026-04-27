@@ -53,6 +53,7 @@ CORPUS_DEFAULTS: dict[str, tuple[str, str]] = {
 
 _PROGRESS_RE = re.compile(r"^\[(\d+)/(\d+)\]\s+(.+)$")
 _RESULT_RE = re.compile(r"^results\s*(?:→|->)\s*(.+)$")
+DEFAULT_MODEL = "qwen3:4b"
 
 
 def _default_dir(env_key: str, fallback: str) -> str:
@@ -103,6 +104,48 @@ def _cli_path() -> list[str]:
 
 def _experiment_runner_cli() -> list[str]:
     return [sys.executable, "-m", "experiment_runner.main"]
+
+
+def _parse_ollama_list(output: str) -> list[str]:
+    models: list[str] = []
+    for line in output.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("NAME "):
+            continue
+        models.append(stripped.split()[0])
+    return models
+
+
+def _query_ollama_models() -> list[str]:
+    try:
+        result = subprocess.run(
+            ["ollama", "list"],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if result.returncode != 0:
+        return []
+    return _parse_ollama_list(result.stdout)
+
+
+_load_ollama_models = st.cache_data(show_spinner=False, ttl=60)(_query_ollama_models)
+
+
+def _model_options(default: str = DEFAULT_MODEL) -> list[str]:
+    models = _load_ollama_models()
+    if default not in models:
+        return [default, *models]
+    return models
+
+
+def _select_model(label: str, default: str = DEFAULT_MODEL, *, key: str) -> str:
+    options = _model_options(default)
+    index = options.index(default) if default in options else 0
+    return st.selectbox(label, options, index=index, key=key)
 
 
 def _run_experiment_subprocess(
@@ -185,7 +228,14 @@ def _sidebar() -> dict:
         "path_to_corpora",
         value="./corpora/scraped_data",
     )
-    examiner_model = st.sidebar.text_input("examiner_model", value="qwen3:4b")
+    model_options = _model_options()
+    default_model_index = model_options.index(DEFAULT_MODEL) if DEFAULT_MODEL in model_options else 0
+    examiner_model = st.sidebar.selectbox(
+        "examiner_model",
+        model_options,
+        index=default_model_index,
+        key="examiner_model",
+    )
     num_ctx = st.sidebar.number_input("num_ctx", min_value=1024, max_value=131072, value=8192, step=1024)
 
     if st.sidebar.button("🔄 Refresh data", width="stretch"):
@@ -432,7 +482,8 @@ def _tab_run_experiment(cfg: dict) -> None:
     )
 
     cols = st.columns(3)
-    model = cols[0].text_input("model", value="qwen3:4b")
+    with cols[0]:
+        model = _select_model("model", key="experiment_model")
     num_ctx = cols[1].number_input(
         "num_ctx",
         min_value=1024,
