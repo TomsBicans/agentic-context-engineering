@@ -86,7 +86,7 @@ def _sidebar() -> dict:
     examiner_model = st.sidebar.text_input("examiner_model", value="qwen3:4b")
     num_ctx = st.sidebar.number_input("num_ctx", min_value=1024, max_value=131072, value=8192, step=1024)
 
-    if st.sidebar.button("🔄 Refresh data", use_container_width=True):
+    if st.sidebar.button("🔄 Refresh data", width="stretch"):
         st.cache_data.clear()
         st.rerun()
 
@@ -122,7 +122,7 @@ def _tab_overview(df: pd.DataFrame, runs, analyses) -> None:
         .mean()
         .round(3)
     )
-    st.dataframe(grouped, use_container_width=True, hide_index=True)
+    st.dataframe(grouped, width="stretch", hide_index=True)
 
 
 def _tab_runs(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
@@ -162,7 +162,7 @@ def _tab_runs(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         "helpfulness_rating",
     ]
     available = [c for c in display_cols if c in filtered.columns]
-    st.dataframe(filtered[available], use_container_width=True, hide_index=True)
+    st.dataframe(filtered[available], width="stretch", hide_index=True)
     st.caption(f"{len(filtered)} run(s) match filters")
 
     return filtered, list(filtered["run_id"])
@@ -177,7 +177,7 @@ def _tab_charts(df: pd.DataFrame) -> None:
     plot_names = list(ALL_PLOTS.keys())
     selected = st.multiselect("Charts to show", plot_names, default=plot_names[:4])
     for name in selected:
-        st.plotly_chart(ALL_PLOTS[name](df), use_container_width=True)
+        st.plotly_chart(ALL_PLOTS[name](df), width="stretch")
 
 
 def _tab_run_details(df: pd.DataFrame, analyses) -> None:
@@ -228,7 +228,7 @@ def _tab_run_details(df: pd.DataFrame, analyses) -> None:
         for c in analysis.claims
     ]
     if claim_rows:
-        st.dataframe(pd.DataFrame(claim_rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(claim_rows), width="stretch", hide_index=True)
 
 
 def _tab_actions(cfg: dict, filtered: pd.DataFrame) -> None:
@@ -240,7 +240,7 @@ def _tab_actions(cfg: dict, filtered: pd.DataFrame) -> None:
     resume = cols[0].checkbox("Resume (skip cached)", value=True)
     only_filtered = cols[1].checkbox("Only filtered runs", value=False)
 
-    if cols[2].button("▶ Run analyze", type="primary", use_container_width=True):
+    if cols[2].button("▶ Run analyze", type="primary", width="stretch"):
         args = _cli_path() + [
             "analyze",
             "--experiment-results-dir", str(cfg["experiment_dir"]),
@@ -265,7 +265,7 @@ def _tab_actions(cfg: dict, filtered: pd.DataFrame) -> None:
     cols = st.columns([3, 1])
     output_dir = cols[0].text_input("Output directory", value="./data/figures")
     formats = cols[1].multiselect("Formats", ["html", "png", "pdf", "svg"], default=["html"])
-    if st.button("▶ Run visualize", type="primary", use_container_width=True):
+    if st.button("▶ Run visualize", type="primary", width="stretch"):
         args = _cli_path() + [
             "visualize",
             "--experiment-results-dir", str(cfg["experiment_dir"]),
