@@ -16,9 +16,13 @@ test_cli:
 test_agent:
 	uv run --package agent ${PYTHON} -m pytest -v
 
+test_result_processor:
+	uv run --package result-processor ${PYTHON} -m pytest packages/result_processor/src/result_processor/tests/ -v
+
 test_all:
 	uv run --package agent ${PYTHON} -m pytest -v
 	uv run --package cli ${PYTHON} -m pytest packages/cli/src/cli/tests/ -v
+	uv run --package result-processor ${PYTHON} -m pytest packages/result_processor/src/result_processor/tests/ -v
 
 install_tools:
 	uv tool install ./packages/cli
