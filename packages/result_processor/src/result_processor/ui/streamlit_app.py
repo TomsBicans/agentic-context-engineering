@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +22,37 @@ from result_processor.visualization.loader import (
     load_runs,
 )
 from result_processor.visualization.plots import ALL_PLOTS
+
+
+SYSTEM_OPTIONS = [
+    "ace",
+    "claude_code_cloud",
+    "claude_code_local",
+    "chatgpt_codex",
+    "clawcode",
+    "anythingllm",
+    "open_webui",
+    "privategpt",
+    "perplexity",
+]
+
+CORPUS_DEFAULTS: dict[str, tuple[str, str]] = {
+    "solar_system_wiki": (
+        "./corpora/questions/solar_system.json",
+        "./corpora/scraped_data/solar_system_wiki",
+    ),
+    "oblivion_wiki": (
+        "./corpora/questions/oblivion.json",
+        "./corpora/scraped_data/oblivion_wiki",
+    ),
+    "scipy": (
+        "./corpora/questions/scipy.json",
+        "./corpora/scraped_data/scipy_repo",
+    ),
+}
+
+_PROGRESS_RE = re.compile(r"^\[(\d+)/(\d+)\]\s+(.+)$")
+_RESULT_RE = re.compile(r"^results\s*(?:→|->)\s*(.+)$")
 
 
 def _default_dir(env_key: str, fallback: str) -> str:
@@ -67,6 +99,76 @@ def _run_subprocess(args: list[str], status_label: str) -> int:
 def _cli_path() -> list[str]:
     """Invoke the CLI via the current Python interpreter to avoid PATH issues."""
     return [sys.executable, "-m", "result_processor.main"]
+
+
+def _experiment_runner_cli() -> list[str]:
+    return [sys.executable, "-m", "experiment_runner.main"]
+
+
+def _run_experiment_subprocess(
+    args: list[str],
+    expected_total: int,
+    status_label: str = "Running experiment",
+) -> tuple[int, str | None]:
+    """Run experiment-runner with a live progress bar driven by `[i/total]` lines.
+
+    Returns (exit_code, result_path). `result_path` is the JSONL file the runner
+    wrote (parsed from the trailing `results → <path>` line), or None on failure
+    or dry-run.
+    """
+    with st.status(status_label, expanded=True) as status:
+        st.code(" ".join(args), language="bash")
+        progress = st.progress(0.0, text="Starting…")
+        log_box = st.empty()
+
+        # Force unbuffered output from the child so `[i/total]` lines arrive
+        # immediately rather than being held until the buffer fills.
+        env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+
+        process = subprocess.Popen(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env=env,
+        )
+        assert process.stdout is not None
+
+        lines: list[str] = []
+        current = 0
+        total = max(expected_total, 1)
+        result_path: str | None = None
+
+        for line in process.stdout:
+            line = line.rstrip("\n")
+            lines.append(line)
+            log_box.code("\n".join(lines[-200:]))
+
+            m_prog = _PROGRESS_RE.match(line)
+            if m_prog:
+                current = int(m_prog.group(1))
+                total = int(m_prog.group(2))
+                progress.progress(
+                    min(current / max(total, 1), 1.0),
+                    text=f"[{current}/{total}] {m_prog.group(3)[:100]}",
+                )
+                continue
+
+            m_res = _RESULT_RE.match(line)
+            if m_res:
+                result_path = m_res.group(1).strip()
+
+        rc = process.wait()
+        if rc == 0:
+            progress.progress(1.0, text=f"Done — {current}/{total}")
+            label = f"{status_label} ✓"
+            if result_path:
+                label += f" — {result_path}"
+            status.update(label=label, state="complete")
+        else:
+            status.update(label=f"{status_label} (exit {rc})", state="error")
+        return rc, result_path
 
 
 def _sidebar() -> dict:
@@ -272,6 +374,126 @@ def _format_run_date(value) -> str:
     return timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
+def _load_question_meta(questions_file: str) -> tuple[list[str], dict[str, str]]:
+    """Return (ordered_ids, id→question_text) parsed from a questions JSON file."""
+    path = Path(questions_file)
+    if not path.is_file():
+        return [], {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return [], {}
+    ids: list[str] = []
+    meta: dict[str, str] = {}
+    for q in raw:
+        qid = q.get("id")
+        if not qid:
+            continue
+        ids.append(qid)
+        meta[qid] = q.get("question", "")
+    return ids, meta
+
+
+def _tab_run_experiment(cfg: dict) -> None:
+    st.subheader("Run experiment")
+    st.caption(
+        "Launches `experiment-runner run` as a subprocess (same code path as "
+        "`make ace_experiment_single`). Live progress is parsed from the "
+        "`[i/total]` markers it writes to stderr."
+    )
+
+    cols = st.columns(2)
+    system = cols[0].selectbox("system", SYSTEM_OPTIONS, index=0)
+    corpus = cols[1].selectbox("corpus", list(CORPUS_DEFAULTS.keys()), index=0)
+
+    default_q_file, default_corpora_root = CORPUS_DEFAULTS[corpus]
+
+    cols = st.columns(2)
+    questions_file = cols[0].text_input(
+        "questions_file",
+        value=default_q_file,
+        key=f"qf_{corpus}",
+    )
+    path_to_corpora = cols[1].text_input(
+        "path_to_corpora",
+        value=default_corpora_root,
+        key=f"corpora_{corpus}",
+    )
+
+    available_ids, questions_meta = _load_question_meta(questions_file)
+    if questions_file and not available_ids:
+        st.warning(f"Could not load any question IDs from {questions_file}.")
+
+    selected_ids = st.multiselect(
+        f"question_ids ({len(available_ids)} available — empty = run all)",
+        available_ids,
+        default=[],
+        format_func=lambda i: f"{i} — {questions_meta.get(i, '')[:80]}",
+    )
+
+    cols = st.columns(3)
+    model = cols[0].text_input("model", value="qwen3:4b")
+    num_ctx = cols[1].number_input(
+        "num_ctx",
+        min_value=1024,
+        max_value=131072,
+        value=8192,
+        step=1024,
+    )
+    automation_level = cols[2].selectbox(
+        "automation_level",
+        ["full", "partial", "manual"],
+        index=0,
+    )
+
+    cols = st.columns(3)
+    output_dir = cols[0].text_input("output_dir", value=str(cfg["experiment_dir"]))
+    reasoning_enabled = cols[1].checkbox("reasoning_enabled", value=False)
+    no_trace = cols[2].checkbox("no_trace", value=False)
+
+    dry_run = st.checkbox("dry_run (validate without executing)", value=False)
+
+    n_to_run = len(selected_ids) if selected_ids else len(available_ids)
+
+    cols = st.columns([3, 1])
+    cols[0].caption(
+        f"Will run **{n_to_run}** question(s) with `{system}` on corpus `{corpus}`."
+    )
+    if cols[1].button("▶ Run experiment", type="primary", width="stretch", disabled=n_to_run == 0):
+        args = _experiment_runner_cli() + [
+            "run",
+            "--system", system,
+            "--corpus", corpus,
+            "--questions-file", questions_file,
+            "--output-dir", output_dir,
+            "--model", model,
+            "--num-ctx", str(int(num_ctx)),
+            "--path-to-corpora", path_to_corpora,
+            "--automation-level", automation_level,
+        ]
+        if selected_ids:
+            args.append("--question-ids")
+            args.extend(selected_ids)
+        if reasoning_enabled:
+            args.append("--reasoning-enabled")
+        if no_trace:
+            args.append("--no-trace")
+        if dry_run:
+            args.append("--dry-run")
+
+        rc, result_path = _run_experiment_subprocess(
+            args,
+            expected_total=n_to_run,
+            status_label="Dry run" if dry_run else "Running experiment",
+        )
+        if rc == 0 and not dry_run:
+            st.cache_data.clear()
+            if result_path:
+                st.success(f"Wrote {result_path}. Switch to the **Runs** tab to inspect.")
+            else:
+                st.success("Run complete. Refresh data to see new rows.")
+
+
 def _tab_actions(cfg: dict, filtered: pd.DataFrame) -> None:
     st.subheader("Actions")
     st.caption("Both actions shell out to the `result-processor` CLI so behaviour matches Makefile/terminal usage.")
@@ -353,12 +575,22 @@ def main() -> None:
     runs = data["runs"]
     analyses = data["analyses"]
 
-    overview_tab, runs_tab, charts_tab, details_tab, actions_tab = st.tabs(
-        ["Overview", "Runs", "Charts", "Run details", "Actions"]
+    (
+        overview_tab,
+        run_tab,
+        runs_tab,
+        charts_tab,
+        details_tab,
+        actions_tab,
+    ) = st.tabs(
+        ["Overview", "Run experiment", "Runs", "Charts", "Run details", "Actions"]
     )
 
     with overview_tab:
         _tab_overview(df, runs, analyses)
+
+    with run_tab:
+        _tab_run_experiment(cfg)
 
     with runs_tab:
         filtered, _ = _tab_runs(df, analyses)
