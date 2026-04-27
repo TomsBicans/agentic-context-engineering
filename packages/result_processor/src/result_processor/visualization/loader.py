@@ -77,6 +77,8 @@ def build_dataframe(
         )
         record: dict[str, Any] = {
             "run_id": run.run_id,
+            "created_at": run.created_at,
+            "run_date": run.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
             "system_name": run.system_name.value,
             "corpus": run.corpus.value,
             "model": run.model,

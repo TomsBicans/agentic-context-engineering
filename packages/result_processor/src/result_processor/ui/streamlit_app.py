@@ -125,7 +125,7 @@ def _tab_overview(df: pd.DataFrame, runs, analyses) -> None:
     st.dataframe(grouped, width="stretch", hide_index=True)
 
 
-def _tab_runs(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+def _tab_runs(df: pd.DataFrame, analyses) -> tuple[pd.DataFrame, list[str]]:
     st.subheader("Runs")
     if df.empty:
         st.info("Empty dataset.")
@@ -147,8 +147,15 @@ def _tab_runs(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         filtered = filtered[filtered["level"].isin(levels)]
     if only_unanalyzed:
         filtered = filtered[filtered["support_rate"].isna()]
+    if "created_at" in filtered.columns:
+        filtered = filtered.sort_values(
+            "created_at",
+            ascending=False,
+            na_position="last",
+        )
 
     display_cols = [
+        "run_date",
         "run_id",
         "system_name",
         "corpus",
@@ -162,8 +169,23 @@ def _tab_runs(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         "helpfulness_rating",
     ]
     available = [c for c in display_cols if c in filtered.columns]
-    st.dataframe(filtered[available], width="stretch", hide_index=True)
+    event = st.dataframe(
+        filtered[available],
+        width="stretch",
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="runs_table",
+    )
     st.caption(f"{len(filtered)} run(s) match filters")
+
+    selected_rows = event.selection.rows if event.selection else []
+    if selected_rows:
+        selected_row = filtered.iloc[selected_rows[0]]
+        st.divider()
+        _render_run_details(filtered, analyses, selected_row["run_id"])
+    else:
+        st.info("Select a run row to view its details here.")
 
     return filtered, list(filtered["run_id"])
 
@@ -180,19 +202,19 @@ def _tab_charts(df: pd.DataFrame) -> None:
         st.plotly_chart(ALL_PLOTS[name](df), width="stretch")
 
 
-def _tab_run_details(df: pd.DataFrame, analyses) -> None:
+def _render_run_details(df: pd.DataFrame, analyses, run_id: str) -> None:
     st.subheader("Run details")
     if df.empty:
         st.info("No runs.")
         return
 
-    run_id = st.selectbox("Run ID", df["run_id"].tolist())
     row = df[df["run_id"] == run_id].iloc[0]
 
-    cols = st.columns(3)
+    cols = st.columns(4)
     cols[0].metric("System", row["system_name"])
     cols[1].metric("Corpus", row["corpus"])
     cols[2].metric("Level", row["level"] if pd.notna(row["level"]) else "—")
+    cols[3].metric("Run date", _format_run_date(row.get("created_at")))
 
     st.markdown(f"**Question:** {row['question_text']}")
     with st.expander("Answer", expanded=True):
@@ -229,6 +251,25 @@ def _tab_run_details(df: pd.DataFrame, analyses) -> None:
     ]
     if claim_rows:
         st.dataframe(pd.DataFrame(claim_rows), width="stretch", hide_index=True)
+
+
+def _tab_run_details(df: pd.DataFrame, analyses) -> None:
+    if df.empty:
+        st.subheader("Run details")
+        st.info("No runs.")
+        return
+
+    run_id = st.selectbox("Run ID", df["run_id"].tolist())
+    _render_run_details(df, analyses, run_id)
+
+
+def _format_run_date(value) -> str:
+    if pd.isna(value):
+        return "—"
+    timestamp = pd.Timestamp(value)
+    if timestamp.tzinfo is not None:
+        timestamp = timestamp.tz_convert("UTC")
+    return timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def _tab_actions(cfg: dict, filtered: pd.DataFrame) -> None:
@@ -320,7 +361,7 @@ def main() -> None:
         _tab_overview(df, runs, analyses)
 
     with runs_tab:
-        filtered, _ = _tab_runs(df)
+        filtered, _ = _tab_runs(df, analyses)
 
     with charts_tab:
         _tab_charts(df)
