@@ -9,6 +9,7 @@ from typing import Any, Optional
 from experiment_runner.models.metrics import RunMetrics, TokenCounts
 from experiment_runner.models.question import Question
 from experiment_runner.models.result import RunResult
+from experiment_runner.models.trace import SessionTrace
 from experiment_runner.runners.base import BaseRunner
 
 # Per-question wall-clock budget for the ClawCode subprocess.
@@ -106,6 +107,12 @@ class ClawCodeRunner(BaseRunner):
         tokens = self._extract_tokens(data.get("usage"))
 
         result.answer_text = answer_text
+        if self.config.store_trace:
+            result.trace = SessionTrace(
+                model=data.get("model") if isinstance(data.get("model"), str) else None,
+                workspace_root=str(workspace) if "workspace" in locals() else None,
+                extra=data,
+            )
         result.metrics = RunMetrics(
             execution_time_s=execution_time,
             tool_call_count=len(tool_sequence),
