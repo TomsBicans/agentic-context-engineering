@@ -11,13 +11,12 @@ from experiment_runner.models.question import Question
 from experiment_runner.models.result import RunResult
 from experiment_runner.runners.base import BaseRunner
 
-
 # Per-question wall-clock budget for the ClawCode subprocess.
 _TIMEOUT_SECONDS = 180
 
 # Tools the EXAMINEE is allowed to invoke. Restricted to read/search-only so
 # ClawCode cannot mutate the workspace even though it runs in workspace-write mode.
-_ALLOWED_TOOLS = "read_file,glob_search,grep_search,list_files"
+_ALLOWED_TOOLS = "read_file,glob_search,grep_search"
 
 # Ollama-compatible OpenAI shim used by ClawCode for local inference.
 _OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"
@@ -171,7 +170,7 @@ class ClawCodeRunner(BaseRunner):
         if start == -1 or end == -1 or end <= start:
             return None
         try:
-            return json.loads(stripped[start : end + 1])
+            return json.loads(stripped[start: end + 1])
         except json.JSONDecodeError:
             return None
 
