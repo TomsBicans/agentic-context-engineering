@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
+from agent.prompts import EXAMINEE_SYSTEM_MESSAGE
 from experiment_runner.models.metrics import RunMetrics, TokenCounts
 from experiment_runner.models.question import Question
 from experiment_runner.models.result import RunResult
@@ -22,6 +23,15 @@ _ALLOWED_TOOLS = "read_file,glob_search,grep_search"
 # Ollama-compatible OpenAI shim used by ClawCode for local inference.
 _OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"
 _OLLAMA_API_KEY = "ollama"
+
+_CLAWCODE_PROMPT_SUFFIX = """
+ClawCode runtime notes
+- For this run, the corpus is mounted at ./corpus.
+- Available tools are grep_search, glob_search, and read_file.
+- Use grep_search or glob_search instead of search() or list_paths().
+- There is no time_left() tool; keep the search bounded and answer within the run budget.
+- Do not search, read, or cite files under ./.claw.
+""".strip()
 
 
 class ClawCodeRunner(BaseRunner):
@@ -63,8 +73,10 @@ class ClawCodeRunner(BaseRunner):
                 corpus_link = workspace / "corpus"
                 corpus_link.symlink_to(corpus_root, target_is_directory=True)
 
-                completed = self._invoke_claw(question.question,
-                                              workspace)  # TODO: pass the system prompt aswell somehow
+                completed = self._invoke_claw(
+                    self._build_prompt(question.question),
+                    workspace,
+                )
 
                 if completed.returncode != 0:
                     result.answer_error = (
@@ -121,6 +133,10 @@ class ClawCodeRunner(BaseRunner):
             corpus_used=len(tool_sequence) > 0,
         )
         return result
+
+    @staticmethod
+    def _build_prompt(question: str) -> str:
+        return f"{EXAMINEE_SYSTEM_MESSAGE}\n\n{_CLAWCODE_PROMPT_SUFFIX}\n\nQuestion:\n{question}"
 
     def _invoke_claw(self, prompt: str, workspace: Path) -> subprocess.CompletedProcess:
         # ClawCode requires a provider-prefixed model identifier ("openai/qwen3:8b").
