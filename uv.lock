@@ -389,11 +389,15 @@ name = "experiment-runner"
 version = "0.1.0"
 source = { editable = "packages/experiment_runner" }
 dependencies = [
+    { name = "agent" },
     { name = "pydantic" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.12.5" }]
+requires-dist = [
+    { name = "agent", editable = "packages/agent" },
+    { name = "pydantic", specifier = ">=2.12.5" },
+]
 
 [[package]]
 name = "filelock"

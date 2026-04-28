@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "agent",
     "pydantic>=2.12.5",
 ]
 
@@ -17,3 +18,6 @@ experiment-runner = "experiment_runner.main:main"
 [build-system]
 requires = ["uv_build>=0.9.26,<0.10.0"]
 build-backend = "uv_build"
+
+[tool.uv.sources]
+agent = { workspace = true }
