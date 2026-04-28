@@ -1,3 +1,5 @@
+include setup/*.mk
+
 PYTHON := python3
 
 # Setup
@@ -108,6 +110,9 @@ model=qwen3-vl:8b
 model=qwen3:14b
 model=gpt-oss:20b
 model=qwen3:4b
+model=qwen3:8b
+model=qwen2.5-coder:14b-instruct
+model=qwen3:14b
 
 q="how many Extreme trans-Neptunian objects are there?"
 q="Where can i find the list of minor planets?"
