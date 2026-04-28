@@ -44,6 +44,25 @@ def test_format_run_date_handles_missing_and_timezone_values() -> None:
     assert ui._format_run_date(pd.Timestamp("2026-04-26T11:55:51Z")) == "2026-04-26 11:55:51 UTC"
 
 
+def test_latest_runs_dataframe_sorts_newest_first_without_limiting_rows() -> None:
+    df = pd.DataFrame(
+        {
+            "run_id": ["old", "new", "middle"],
+            "created_at": pd.to_datetime(
+                [
+                    "2026-04-26T10:00:00Z",
+                    "2026-04-28T10:00:00Z",
+                    "2026-04-27T10:00:00Z",
+                ]
+            ),
+        }
+    )
+
+    latest = ui._latest_runs_dataframe(df)
+
+    assert latest["run_id"].tolist() == ["new", "middle", "old"]
+
+
 def test_locate_source_file_finds_run_id_and_ignores_bad_json(tmp_path) -> None:
     write_jsonl(tmp_path / "runs.jsonl", [run_payload(run_id="target")])
     (tmp_path / "bad.jsonl").write_text("{bad json}\n", encoding="utf-8")

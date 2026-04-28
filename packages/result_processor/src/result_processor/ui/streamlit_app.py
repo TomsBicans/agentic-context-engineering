@@ -342,6 +342,53 @@ def _tab_runs(df: pd.DataFrame, analyses) -> tuple[pd.DataFrame, list[str]]:
     return filtered, list(filtered["run_id"])
 
 
+def _latest_runs_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    latest = df.copy()
+    if "created_at" in latest.columns:
+        latest = latest.sort_values("created_at", ascending=False, na_position="last")
+    return latest
+
+
+def _render_latest_runs_panel(df: pd.DataFrame, analyses) -> None:
+    with st.expander("Runs", expanded=True):
+        latest = _latest_runs_dataframe(df)
+        if latest.empty:
+            st.info("No experiment runs yet.")
+            return
+
+        display_cols = [
+            "run_date",
+            "system_name",
+            "corpus",
+            "level",
+            "question_id",
+            "model",
+            "verdict",
+            "support_rate",
+            "helpfulness_rating",
+        ]
+        available = [c for c in display_cols if c in latest.columns]
+        event = st.dataframe(
+            latest[available],
+            width="stretch",
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="latest_runs_table",
+        )
+        st.caption(f"{len(latest)} run(s)")
+
+        selected_rows = event.selection.rows if event.selection else []
+        if selected_rows:
+            selected_row = latest.iloc[selected_rows[0]]
+            st.divider()
+            _render_run_details(latest, analyses, selected_row["run_id"])
+        else:
+            st.info("Select a run row to inspect it here.")
+
+
 def _tab_charts(df: pd.DataFrame) -> None:
     st.subheader("Charts")
     if df.empty or df["support_rate"].dropna().empty:
@@ -444,7 +491,7 @@ def _load_question_meta(questions_file: str) -> tuple[list[str], dict[str, str]]
     return ids, meta
 
 
-def _tab_run_experiment(cfg: dict) -> None:
+def _tab_run_experiment(cfg: dict, df: pd.DataFrame, analyses) -> None:
     st.subheader("Run experiment")
     st.caption(
         "Launches `experiment-runner run` as a subprocess (same code path as "
@@ -452,6 +499,18 @@ def _tab_run_experiment(cfg: dict) -> None:
         "`[i/total]` markers it writes to stderr."
     )
 
+    message = st.session_state.pop("last_experiment_message", None)
+    if message:
+        st.success(message)
+
+    form_col, runs_col = st.columns([1, 1], gap="large")
+    with form_col:
+        _render_run_experiment_form(cfg)
+    with runs_col:
+        _render_latest_runs_panel(df, analyses)
+
+
+def _render_run_experiment_form(cfg: dict) -> None:
     cols = st.columns(2)
     system = cols[0].selectbox("system", SYSTEM_OPTIONS, index=0)
     corpus = cols[1].selectbox("corpus", list(CORPUS_DEFAULTS.keys()), index=0)
@@ -540,9 +599,10 @@ def _tab_run_experiment(cfg: dict) -> None:
         if rc == 0 and not dry_run:
             st.cache_data.clear()
             if result_path:
-                st.success(f"Wrote {result_path}. Switch to the **Runs** tab to inspect.")
+                st.session_state["last_experiment_message"] = f"Wrote {result_path}."
             else:
-                st.success("Run complete. Refresh data to see new rows.")
+                st.session_state["last_experiment_message"] = "Run complete."
+            st.rerun()
 
 
 def _tab_actions(cfg: dict, filtered: pd.DataFrame) -> None:
@@ -641,7 +701,7 @@ def main() -> None:
         _tab_overview(df, runs, analyses)
 
     with run_tab:
-        _tab_run_experiment(cfg)
+        _tab_run_experiment(cfg, df, analyses)
 
     with runs_tab:
         filtered, _ = _tab_runs(df, analyses)
