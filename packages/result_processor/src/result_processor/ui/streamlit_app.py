@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -104,6 +105,53 @@ def _cli_path() -> list[str]:
 
 def _experiment_runner_cli() -> list[str]:
     return [sys.executable, "-m", "experiment_runner.main"]
+
+
+def _build_experiment_run_args(
+    *,
+    system: str,
+    corpus: str,
+    questions_file: str,
+    output_dir: str,
+    model: str,
+    num_ctx: int,
+    path_to_corpora: str,
+    automation_level: str,
+    selected_ids: list[str],
+    reasoning_enabled: bool,
+    no_trace: bool,
+    dry_run: bool,
+) -> list[str]:
+    args = _experiment_runner_cli() + [
+        "run",
+        "--system", system,
+        "--corpus", corpus,
+        "--questions-file", questions_file,
+        "--output-dir", output_dir,
+        "--model", model,
+        "--num-ctx", str(num_ctx),
+        "--path-to-corpora", path_to_corpora,
+        "--automation-level", automation_level,
+    ]
+    if selected_ids:
+        args.append("--question-ids")
+        args.extend(selected_ids)
+    if reasoning_enabled:
+        args.append("--reasoning-enabled")
+    if no_trace:
+        args.append("--no-trace")
+    if dry_run:
+        args.append("--dry-run")
+    return args
+
+
+def _shell_command(args: list[str]) -> str:
+    return shlex.join(args)
+
+
+def _render_shell_command_preview(command: str) -> None:
+    st.markdown("Shell command")
+    st.code(command, language="bash")
 
 
 def _parse_ollama_list(output: str) -> list[str]:
@@ -564,33 +612,27 @@ def _render_run_experiment_form(cfg: dict) -> None:
     dry_run = st.checkbox("dry_run (validate without executing)", value=False)
 
     n_to_run = len(selected_ids) if selected_ids else len(available_ids)
+    args = _build_experiment_run_args(
+        system=system,
+        corpus=corpus,
+        questions_file=questions_file,
+        output_dir=output_dir,
+        model=model,
+        num_ctx=int(num_ctx),
+        path_to_corpora=path_to_corpora,
+        automation_level=automation_level,
+        selected_ids=selected_ids,
+        reasoning_enabled=reasoning_enabled,
+        no_trace=no_trace,
+        dry_run=dry_run,
+    )
+    _render_shell_command_preview(_shell_command(args))
 
     cols = st.columns([3, 1])
     cols[0].caption(
         f"Will run **{n_to_run}** question(s) with `{system}` on corpus `{corpus}`."
     )
     if cols[1].button("▶ Run experiment", type="primary", width="stretch", disabled=n_to_run == 0):
-        args = _experiment_runner_cli() + [
-            "run",
-            "--system", system,
-            "--corpus", corpus,
-            "--questions-file", questions_file,
-            "--output-dir", output_dir,
-            "--model", model,
-            "--num-ctx", str(int(num_ctx)),
-            "--path-to-corpora", path_to_corpora,
-            "--automation-level", automation_level,
-        ]
-        if selected_ids:
-            args.append("--question-ids")
-            args.extend(selected_ids)
-        if reasoning_enabled:
-            args.append("--reasoning-enabled")
-        if no_trace:
-            args.append("--no-trace")
-        if dry_run:
-            args.append("--dry-run")
-
         rc, result_path = _run_experiment_subprocess(
             args,
             expected_total=n_to_run,

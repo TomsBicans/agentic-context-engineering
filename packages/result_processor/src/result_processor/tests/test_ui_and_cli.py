@@ -39,6 +39,60 @@ def test_query_ollama_models_returns_empty_on_command_failure(monkeypatch) -> No
     assert ui._query_ollama_models() == []
 
 
+def test_build_experiment_run_args_includes_selected_options(monkeypatch) -> None:
+    monkeypatch.setattr(ui.sys, "executable", "/usr/bin/python")
+
+    args = ui._build_experiment_run_args(
+        system="ace",
+        corpus="scipy",
+        questions_file="./questions.json",
+        output_dir="./out",
+        model="qwen3:4b",
+        num_ctx=16384,
+        path_to_corpora="./corpora",
+        automation_level="partial",
+        selected_ids=["q1", "q2"],
+        reasoning_enabled=True,
+        no_trace=True,
+        dry_run=True,
+    )
+
+    assert args == [
+        "/usr/bin/python",
+        "-m",
+        "experiment_runner.main",
+        "run",
+        "--system",
+        "ace",
+        "--corpus",
+        "scipy",
+        "--questions-file",
+        "./questions.json",
+        "--output-dir",
+        "./out",
+        "--model",
+        "qwen3:4b",
+        "--num-ctx",
+        "16384",
+        "--path-to-corpora",
+        "./corpora",
+        "--automation-level",
+        "partial",
+        "--question-ids",
+        "q1",
+        "q2",
+        "--reasoning-enabled",
+        "--no-trace",
+        "--dry-run",
+    ]
+
+
+def test_shell_command_quotes_arguments() -> None:
+    assert ui._shell_command(["python", "-m", "mod", "--output-dir", "path with space"]) == (
+        "python -m mod --output-dir 'path with space'"
+    )
+
+
 def test_format_run_date_handles_missing_and_timezone_values() -> None:
     assert ui._format_run_date(pd.NA) == "—"
     assert ui._format_run_date(pd.Timestamp("2026-04-26T11:55:51Z")) == "2026-04-26 11:55:51 UTC"
