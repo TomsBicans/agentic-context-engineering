@@ -62,7 +62,8 @@ class ClawCodeRunner(BaseRunner):
                 corpus_link = workspace / "corpus"
                 corpus_link.symlink_to(corpus_root, target_is_directory=True)
 
-                completed = self._invoke_claw(question.question, workspace)
+                completed = self._invoke_claw(question.question,
+                                              workspace)  # TODO: pass the system prompt aswell somehow
 
                 if completed.returncode != 0:
                     result.answer_error = (
