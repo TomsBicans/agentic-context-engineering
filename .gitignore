@@ -211,3 +211,4 @@ corpora/scraped_data/*
 
 .idea/
 .codex
+data/*
