@@ -1,7 +1,7 @@
 import subprocess
 import time
-from pathlib import Path
 
+from agent.prompts import EXAMINEE_SYSTEM_MESSAGE
 from experiment_runner.models.metrics import RunMetrics
 from experiment_runner.models.question import Question
 from experiment_runner.models.result import RunResult
@@ -10,6 +10,17 @@ from experiment_runner.runners.base import BaseRunner
 
 # Per-question wall-clock budget for the AnythingLLM CLI subprocess.
 _TIMEOUT_SECONDS = 180
+
+# Replaces the ACE-specific tooling strategy section of EXAMINEE_SYSTEM_MESSAGE,
+# which references tools (search(), list_paths(), time_left()) that do not exist
+# in AnythingLLM. The citation format and offline constraints are inherited as-is.
+_ANYTHINGLLM_PROMPT_SUFFIX = """
+AnythingLLM runtime notes
+- You are operating inside an AnythingLLM workspace with the corpus pre-loaded.
+- Document retrieval is automatic — do not reference or call any external tools.
+- Focus on producing a factual, cited answer using only the retrieved context.
+- If the retrieved context does not contain enough information, say so explicitly.
+""".strip()
 
 
 
@@ -37,7 +48,7 @@ class AnythingLLMRunner(BaseRunner):
         t_start = time.perf_counter()
 
         try:
-            completed = self._invoke_any(question.question, workspace)
+            completed = self._invoke_any(self._build_prompt(question.question), workspace)
         except subprocess.TimeoutExpired:
             result.answer_error = f"any timed out after {_TIMEOUT_SECONDS}s"
             result.metrics = RunMetrics(execution_time_s=time.perf_counter() - t_start)
@@ -70,6 +81,10 @@ class AnythingLLMRunner(BaseRunner):
             corpus_used=answer_text is not None,
         )
         return result
+
+    @staticmethod
+    def _build_prompt(question: str) -> str:
+        return f"{EXAMINEE_SYSTEM_MESSAGE}\n\n{_ANYTHINGLLM_PROMPT_SUFFIX}\n\nQuestion:\n{question}"
 
     def _invoke_any(self, prompt: str, workspace: str) -> subprocess.CompletedProcess:
         cmd = [
