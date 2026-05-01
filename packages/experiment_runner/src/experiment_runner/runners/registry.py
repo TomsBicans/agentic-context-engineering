@@ -10,6 +10,7 @@ _REGISTRY: dict[SystemName, type[BaseRunner]] | None = None
 
 def _build_registry() -> dict[SystemName, type[BaseRunner]]:
     from experiment_runner.runners.ace import AceRunner
+    from experiment_runner.runners.baseline.anythingllm import AnythingLLMRunner
     from experiment_runner.runners.baseline.clawcode import ClawCodeRunner
     from experiment_runner.runners.manual import ManualRunner
 
@@ -19,7 +20,7 @@ def _build_registry() -> dict[SystemName, type[BaseRunner]]:
         SystemName.CLAUDE_CODE_LOCAL: ManualRunner,
         SystemName.CHATGPT_CODEX: ManualRunner,
         SystemName.CLAWCODE: ClawCodeRunner,
-        SystemName.ANYTHINGLLM: ManualRunner,
+        SystemName.ANYTHINGLLM: AnythingLLMRunner,
         SystemName.OPEN_WEBUI: ManualRunner,
         SystemName.PRIVATEGPT: ManualRunner,
         SystemName.PERPLEXITY: ManualRunner,
