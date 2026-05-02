@@ -32,6 +32,7 @@ SYSTEM_OPTIONS = [
     "chatgpt_codex",
     "clawcode",
     "anythingllm",
+    "openclaw",
     "open_webui",
     "privategpt",
     "perplexity",

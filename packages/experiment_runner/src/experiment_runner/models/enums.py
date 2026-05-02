@@ -8,6 +8,7 @@ class SystemName(str, Enum):
     CHATGPT_CODEX = "chatgpt_codex"
     CLAWCODE = "clawcode"
     ANYTHINGLLM = "anythingllm"
+    OPENCLAW = "openclaw"
     OPEN_WEBUI = "open_webui"
     PRIVATEGPT = "privategpt"
     PERPLEXITY = "perplexity"
