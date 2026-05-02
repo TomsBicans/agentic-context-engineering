@@ -13,6 +13,7 @@ def _build_registry() -> dict[SystemName, type[BaseRunner]]:
     from experiment_runner.runners.baseline.anythingllm import AnythingLLMRunner
     from experiment_runner.runners.baseline.claudecodelocal import ClaudeCodeLocalRunner
     from experiment_runner.runners.baseline.clawcode import ClawCodeRunner
+    from experiment_runner.runners.baseline.gptcodexlocal import GptCodexLocalRunner
     from experiment_runner.runners.baseline.openclaw import OpenClawRunner
     from experiment_runner.runners.manual import ManualRunner
 
@@ -20,7 +21,7 @@ def _build_registry() -> dict[SystemName, type[BaseRunner]]:
         SystemName.ACE: AceRunner,
         SystemName.CLAUDE_CODE_CLOUD: ManualRunner,
         SystemName.CLAUDE_CODE_LOCAL: ClaudeCodeLocalRunner,
-        SystemName.CHATGPT_CODEX: ManualRunner,
+        SystemName.CHATGPT_CODEX: GptCodexLocalRunner,
         SystemName.CLAWCODE: ClawCodeRunner,
         SystemName.ANYTHINGLLM: AnythingLLMRunner,
         SystemName.OPENCLAW: OpenClawRunner,
