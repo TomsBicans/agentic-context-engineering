@@ -197,6 +197,39 @@ def _select_model(label: str, default: str = DEFAULT_MODEL, *, key: str) -> str:
     return st.selectbox(label, options, index=index, key=key)
 
 
+def _render_run_errors(result_path: str) -> None:
+    """Parse a result JSONL and show any answer_error entries immediately."""
+    import json as _json
+
+    path = Path(result_path)
+    if not path.exists():
+        return
+
+    errors: list[dict] = []
+    try:
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                record = _json.loads(line)
+                if record.get("answer_error"):
+                    errors.append({
+                        "question_id": record.get("question_id", "?"),
+                        "question": record.get("question_text", "")[:80],
+                        "error": record["answer_error"],
+                    })
+    except Exception:
+        return
+
+    if not errors:
+        return
+
+    with st.expander(f"⚠ {len(errors)} error(s) in last run", expanded=True):
+        for e in errors:
+            st.error(f"**{e['question_id']}** — {e['question']}\n\n`{e['error']}`")
+
+
 def _run_experiment_subprocess(
     args: list[str],
     expected_total: int,
@@ -260,6 +293,12 @@ def _run_experiment_subprocess(
             status.update(label=label, state="complete")
         else:
             status.update(label=f"{status_label} (exit {rc})", state="error")
+
+        # Persist log in session state so it survives the st.rerun() that
+        # follows a successful run (rerun wipes all widget state).
+        st.session_state["_last_run_log"] = "\n".join(lines)
+        st.session_state["_last_run_rc"] = rc
+
         return rc, result_path
 
 
@@ -643,9 +682,20 @@ def _render_run_experiment_form(cfg: dict) -> None:
             st.cache_data.clear()
             if result_path:
                 st.session_state["last_experiment_message"] = f"Wrote {result_path}."
+                st.session_state["_last_result_path"] = result_path
             else:
                 st.session_state["last_experiment_message"] = "Run complete."
+                st.session_state.pop("_last_result_path", None)
             st.rerun()
+
+    if "_last_run_log" in st.session_state:
+        rc = st.session_state.get("_last_run_rc", 0)
+        st.expander("Last run output", expanded=rc != 0).code(
+            st.session_state["_last_run_log"], language="text"
+        )
+
+    if "_last_result_path" in st.session_state:
+        _render_run_errors(st.session_state["_last_result_path"])
 
 
 def _tab_actions(cfg: dict, filtered: pd.DataFrame) -> None:
