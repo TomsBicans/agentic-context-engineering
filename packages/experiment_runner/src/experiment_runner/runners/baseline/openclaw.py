@@ -11,7 +11,6 @@ from experiment_runner.models.question import Question
 from experiment_runner.models.result import RunResult
 from experiment_runner.runners.base import BaseRunner
 
-
 # Per-question wall-clock budget for the OpenClaw CLI subprocess.
 _TIMEOUT_SECONDS = 180
 
@@ -69,7 +68,7 @@ class OpenClawRunner(BaseRunner):
         if self.config.path_to_corpora is None:
             raise ValueError("OpenClawRunner requires path_to_corpora in RunConfig")
 
-        corpus_dir = Path(self.config.path_to_corpora).resolve() / self.config.corpus.value
+        corpus_dir = Path(self.config.path_to_corpora).resolve()
         if not corpus_dir.exists():
             raise ValueError(f"Corpus directory does not exist: {corpus_dir}")
 
@@ -173,7 +172,7 @@ class OpenClawRunner(BaseRunner):
         return f"{EXAMINEE_SYSTEM_MESSAGE}\n\n{_OPENCLAW_PROMPT_SUFFIX}\n\nQuestion:\n{question}"
 
     def _invoke_openclaw(
-        self, prompt: str, agent_name: str, session_id: str
+            self, prompt: str, agent_name: str, session_id: str
     ) -> subprocess.CompletedProcess:
         cmd = [
             "openclaw", "agent",
