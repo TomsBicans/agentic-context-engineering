@@ -10,6 +10,7 @@ from agent.prompts import EXAMINEE_SYSTEM_MESSAGE
 from experiment_runner.models.metrics import RunMetrics, TokenCounts
 from experiment_runner.models.question import Question
 from experiment_runner.models.result import RunResult
+from experiment_runner.models.trace import SessionTrace, TraceStep
 from experiment_runner.runners.base import BaseRunner
 
 # Per-question wall-clock budget for the Codex subprocess.
@@ -114,6 +115,8 @@ class GptCodexLocalRunner(BaseRunner):
         tokens = self._extract_tokens(events)
 
         result.answer_text = answer_text
+        if self.config.store_trace:
+            result.trace = SessionTrace(steps=self._extract_steps(events))
         result.metrics = RunMetrics(
             execution_time_s=execution_time,
             tokens=tokens,
@@ -166,6 +169,22 @@ class GptCodexLocalRunner(BaseRunner):
             except json.JSONDecodeError:
                 pass
         return events
+
+    @staticmethod
+    def _extract_steps(events: list[dict[str, Any]]) -> list[TraceStep]:
+        """Convert item.completed events into ordered TraceStep records."""
+        steps: list[TraceStep] = []
+        for event in events:
+            if event.get("type") != "item.completed":
+                continue
+            item = event.get("item")
+            if not isinstance(item, dict):
+                continue
+            item_type = item.get("type")
+            text = item.get("text")
+            if item_type in ("reasoning", "agent_message") and isinstance(text, str):
+                steps.append(TraceStep(type=item_type, content=text.strip() or None))
+        return steps
 
     @staticmethod
     def _extract_answer(events: list[dict[str, Any]]) -> Optional[str]:

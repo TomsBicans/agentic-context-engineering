@@ -2,6 +2,24 @@ from typing import Any, Optional
 from pydantic import BaseModel
 
 
+class TraceStep(BaseModel):
+    """One intermediate step in an agent's execution trace.
+
+    Generic enough to represent steps from any system:
+    - ``reasoning``    — model thinking / chain-of-thought text
+    - ``tool_call``    — the agent invoked a tool (name + input)
+    - ``tool_result``  — the result returned by a tool (name + output)
+    - ``agent_message``— the agent's final or intermediate visible response
+    - ``text``         — any other free-form text turn
+    """
+
+    type: str
+    content: Optional[str] = None   # text content (reasoning / message / text)
+    name: Optional[str] = None      # tool name for tool_call / tool_result
+    input: Optional[str] = None     # JSON-encoded tool input
+    output: Optional[str] = None    # tool result output
+
+
 class TraceBlock(BaseModel):
     """One content block inside a trace message (text, tool_use, or tool_result)."""
 
@@ -50,5 +68,8 @@ class SessionTrace(BaseModel):
     model: Optional[str] = None
     workspace_root: Optional[str] = None
     messages: list[TraceMessage] = []
+    # Ordered intermediate steps (reasoning, tool calls, messages). Populated
+    # by runners that have access to the agent's step-by-step event stream.
+    steps: list[TraceStep] = []
     # Unstructured fallback for system-specific metadata that does not fit above.
     extra: Optional[Any] = None

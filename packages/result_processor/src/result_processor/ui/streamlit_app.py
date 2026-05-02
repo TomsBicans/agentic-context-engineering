@@ -365,7 +365,7 @@ def _tab_overview(df: pd.DataFrame, runs, analyses) -> None:
     st.dataframe(grouped, width="stretch", hide_index=True)
 
 
-def _tab_runs(df: pd.DataFrame, analyses) -> tuple[pd.DataFrame, list[str]]:
+def _tab_runs(df: pd.DataFrame, analyses, runs) -> tuple[pd.DataFrame, list[str]]:
     st.subheader("Runs")
     if df.empty:
         st.info("Empty dataset.")
@@ -423,7 +423,7 @@ def _tab_runs(df: pd.DataFrame, analyses) -> tuple[pd.DataFrame, list[str]]:
     if selected_rows:
         selected_row = filtered.iloc[selected_rows[0]]
         st.divider()
-        _render_run_details(filtered, analyses, selected_row["run_id"])
+        _render_run_details(filtered, analyses, runs, selected_row["run_id"])
     else:
         st.info("Select a run row to view its details here.")
 
@@ -439,7 +439,7 @@ def _latest_runs_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return latest
 
 
-def _render_latest_runs_panel(df: pd.DataFrame, analyses) -> None:
+def _render_latest_runs_panel(df: pd.DataFrame, analyses, runs) -> None:
     with st.expander("Runs", expanded=True):
         latest = _latest_runs_dataframe(df)
         if latest.empty:
@@ -472,7 +472,7 @@ def _render_latest_runs_panel(df: pd.DataFrame, analyses) -> None:
         if selected_rows:
             selected_row = latest.iloc[selected_rows[0]]
             st.divider()
-            _render_run_details(latest, analyses, selected_row["run_id"])
+            _render_run_details(latest, analyses, runs, selected_row["run_id"])
         else:
             st.info("Select a run row to inspect it here.")
 
@@ -489,13 +489,37 @@ def _tab_charts(df: pd.DataFrame) -> None:
         st.plotly_chart(ALL_PLOTS[name](df), width="stretch")
 
 
-def _render_run_details(df: pd.DataFrame, analyses, run_id: str) -> None:
+def _render_trace_steps(run) -> None:
+    """Render trace steps (reasoning, tool calls, messages) for a run."""
+    if run is None or run.trace is None or not run.trace.steps:
+        return
+    steps = run.trace.steps
+    with st.expander(f"Execution trace ({len(steps)} steps)", expanded=False):
+        for i, step in enumerate(steps, 1):
+            label = f"Step {i} — `{step.type}`"
+            if step.type == "reasoning":
+                with st.expander(label, expanded=False):
+                    st.text(step.content or "")
+            elif step.type == "tool_call":
+                with st.expander(label + (f" `{step.name}`" if step.name else ""), expanded=False):
+                    if step.input:
+                        st.code(step.input, language="json")
+            elif step.type == "tool_result":
+                with st.expander(label + (f" `{step.name}`" if step.name else ""), expanded=False):
+                    st.text(step.output or "")
+            else:
+                with st.expander(label, expanded=step.type == "agent_message"):
+                    st.write(step.content or "")
+
+
+def _render_run_details(df: pd.DataFrame, analyses, runs, run_id: str) -> None:
     st.subheader("Run details")
     if df.empty:
         st.info("No runs.")
         return
 
     row = df[df["run_id"] == run_id].iloc[0]
+    run = next((r for r in runs if r.run_id == run_id), None)
 
     cols = st.columns(4)
     cols[0].metric("System", row["system_name"])
@@ -506,6 +530,8 @@ def _render_run_details(df: pd.DataFrame, analyses, run_id: str) -> None:
     st.markdown(f"**Question:** {row['question_text']}")
     with st.expander("Answer", expanded=True):
         st.write(row["answer_text"] or "(empty)")
+
+    _render_trace_steps(run)
 
     analysis = analyses.get(run_id)
     if analysis is None:
@@ -540,14 +566,14 @@ def _render_run_details(df: pd.DataFrame, analyses, run_id: str) -> None:
         st.dataframe(pd.DataFrame(claim_rows), width="stretch", hide_index=True)
 
 
-def _tab_run_details(df: pd.DataFrame, analyses) -> None:
+def _tab_run_details(df: pd.DataFrame, analyses, runs) -> None:
     if df.empty:
         st.subheader("Run details")
         st.info("No runs.")
         return
 
     run_id = st.selectbox("Run ID", df["run_id"].tolist())
-    _render_run_details(df, analyses, run_id)
+    _render_run_details(df, analyses, runs, run_id)
 
 
 def _format_run_date(value) -> str:
@@ -579,7 +605,7 @@ def _load_question_meta(questions_file: str) -> tuple[list[str], dict[str, str]]
     return ids, meta
 
 
-def _tab_run_experiment(cfg: dict, df: pd.DataFrame, analyses) -> None:
+def _tab_run_experiment(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
     st.subheader("Run experiment")
     st.caption(
         "Launches `experiment-runner run` as a subprocess (same code path as "
@@ -595,7 +621,7 @@ def _tab_run_experiment(cfg: dict, df: pd.DataFrame, analyses) -> None:
     with form_col:
         _render_run_experiment_form(cfg)
     with runs_col:
-        _render_latest_runs_panel(df, analyses)
+        _render_latest_runs_panel(df, analyses, runs)
 
 
 def _render_run_experiment_form(cfg: dict) -> None:
@@ -794,16 +820,16 @@ def main() -> None:
         _tab_overview(df, runs, analyses)
 
     with run_tab:
-        _tab_run_experiment(cfg, df, analyses)
+        _tab_run_experiment(cfg, df, analyses, runs)
 
     with runs_tab:
-        filtered, _ = _tab_runs(df, analyses)
+        filtered, _ = _tab_runs(df, analyses, runs)
 
     with charts_tab:
         _tab_charts(df)
 
     with details_tab:
-        _tab_run_details(df, analyses)
+        _tab_run_details(df, analyses, runs)
 
     with actions_tab:
         _tab_actions(cfg, filtered)
