@@ -1,5 +1,8 @@
 import subprocess
 import time
+import urllib.error
+import urllib.request
+from pathlib import Path
 
 from agent.prompts import EXAMINEE_SYSTEM_MESSAGE
 from experiment_runner.models.metrics import RunMetrics
@@ -10,6 +13,11 @@ from experiment_runner.runners.base import BaseRunner
 
 # Per-question wall-clock budget for the AnythingLLM CLI subprocess.
 _TIMEOUT_SECONDS = 180
+
+_CONTAINER_NAME = "anythingllm-thesis"
+_STORAGE_DIR = Path.home() / "anythingllm-thesis-data"
+_READY_URL = "http://localhost:3001/api/ping"
+_READY_TIMEOUT_SECONDS = 90
 
 # Replaces the ACE-specific tooling strategy section of EXAMINEE_SYSTEM_MESSAGE,
 # which references tools (search(), list_paths(), time_left()) that do not exist
@@ -41,6 +49,51 @@ class AnythingLLMRunner(BaseRunner):
     tool-call sequences are unavailable; only ``execution_time_s`` and
     ``corpus_used`` are populated in ``RunMetrics``.
     """
+
+    def setup(self) -> None:
+        self._stop_container()
+        self._start_container()
+        self._wait_for_ready()
+
+    def teardown(self) -> None:
+        self._stop_container()
+
+    def _stop_container(self) -> None:
+        subprocess.run(["docker", "stop", _CONTAINER_NAME], capture_output=True, check=False)
+        subprocess.run(["docker", "rm", _CONTAINER_NAME], capture_output=True, check=False)
+
+    def _start_container(self) -> None:
+        _STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+        (_STORAGE_DIR / ".env").touch()
+        subprocess.run(
+            [
+                "docker", "run", "-d",
+                "--name", _CONTAINER_NAME,
+                "-p", "3001:3001",
+                "--add-host=host.docker.internal:host-gateway",
+                "--cap-add", "SYS_ADMIN",
+                "-v", f"{_STORAGE_DIR}:/app/server/storage",
+                "-v", f"{_STORAGE_DIR}/.env:/app/server/.env",
+                "-e", "STORAGE_DIR=/app/server/storage",
+                "-e", "LLM_PROVIDER=ollama",
+                "-e", f"OLLAMA_MODEL_PREF={self.config.model}",
+                "-e", "OLLAMA_BASE_PATH=http://host.docker.internal:11434",
+                "mintplexlabs/anythingllm:latest",
+            ],
+            check=True,
+        )
+
+    def _wait_for_ready(self) -> None:
+        deadline = time.monotonic() + _READY_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            try:
+                urllib.request.urlopen(_READY_URL, timeout=2)
+                return
+            except (urllib.error.URLError, OSError):
+                time.sleep(2)
+        raise RuntimeError(
+            f"AnythingLLM did not become ready within {_READY_TIMEOUT_SECONDS}s"
+        )
 
     def run(self, question: Question) -> RunResult:
         result = self._base_result(question)

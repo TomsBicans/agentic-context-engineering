@@ -64,11 +64,15 @@ def run_experiment(args: argparse.Namespace) -> None:
     runner = get_runner(config)
     total = len(questions)
 
-    with out_path.open("w", encoding="utf-8") as f:
-        for i, question in enumerate(questions, 1):
-            sys.stderr.write(f"[{i}/{total}] {question.id}: {question.question[:72]}\n")
-            result = runner.run(question)
-            f.write(result.model_dump_json() + "\n")
-            f.flush()
+    runner.setup()
+    try:
+        with out_path.open("w", encoding="utf-8") as f:
+            for i, question in enumerate(questions, 1):
+                sys.stderr.write(f"[{i}/{total}] {question.id}: {question.question[:72]}\n")
+                result = runner.run(question)
+                f.write(result.model_dump_json() + "\n")
+                f.flush()
+    finally:
+        runner.teardown()
 
     sys.stderr.write(f"results → {out_path}\n")

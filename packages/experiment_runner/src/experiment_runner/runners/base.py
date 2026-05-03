@@ -16,6 +16,19 @@ class BaseRunner(ABC):
     def __init__(self, config: RunConfig) -> None:
         self.config = config
 
+    def setup(self) -> None:
+        """Called once before the question batch begins.
+
+        Override to perform expensive one-time initialisation (e.g. starting
+        a Docker container, authenticating to an API). Default is a no-op.
+        """
+
+    def teardown(self) -> None:
+        """Called once after the question batch ends (even on error).
+
+        Override to release resources acquired in setup(). Default is a no-op.
+        """
+
     @abstractmethod
     def run(self, question: Question) -> RunResult:
         """Execute a single question against the system under test.
