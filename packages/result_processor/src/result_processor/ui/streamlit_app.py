@@ -636,6 +636,7 @@ def _render_run_experiment_form(cfg: dict) -> None:
             "automated": "⚙ Automated only",
             "manual": "✋ Manual only",
         }[v],
+        index=1,
         horizontal=True,
         key="system_kind_filter",
     )
