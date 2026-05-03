@@ -834,21 +834,21 @@ def main() -> None:
     analyses = data["analyses"]
 
     (
-        overview_tab,
         run_tab,
+        overview_tab,
         runs_tab,
         charts_tab,
         details_tab,
         actions_tab,
     ) = st.tabs(
-        ["Overview", "Run experiment", "Runs", "Charts", "Run details", "Actions"]
+        ["Run experiment", "Overview", "Runs", "Charts", "Run details", "Actions"]
     )
-
-    with overview_tab:
-        _tab_overview(df, runs, analyses)
 
     with run_tab:
         _tab_run_experiment(cfg, df, analyses, runs)
+
+    with overview_tab:
+        _tab_overview(df, runs, analyses)
 
     with runs_tab:
         filtered, _ = _tab_runs(df, analyses, runs)
