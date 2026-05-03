@@ -8,6 +8,11 @@ from experiment_runner.runners.base import BaseRunner
 _REGISTRY: dict[SystemName, type[BaseRunner]] | None = None
 
 # Static metadata — no heavy imports needed.
+# Systems excluded from experiment execution (kept in code and UI for reference).
+DISABLED_SYSTEMS: frozenset[SystemName] = frozenset({
+    SystemName.OPENCLAW,
+})
+
 SYSTEM_AUTOMATION_LEVELS: dict[SystemName, AutomationLevel] = {
     SystemName.ACE: AutomationLevel.FULL,
     SystemName.CLAUDE_CODE_LOCAL: AutomationLevel.FULL,

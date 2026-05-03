@@ -18,7 +18,7 @@ import pandas as pd
 import streamlit as st
 
 from experiment_runner.models.enums import AutomationLevel, SystemName
-from experiment_runner.runners.registry import SYSTEM_AUTOMATION_LEVELS
+from experiment_runner.runners.registry import DISABLED_SYSTEMS, SYSTEM_AUTOMATION_LEVELS
 from result_processor.visualization.loader import (
     build_dataframe,
     load_analyses,
@@ -33,7 +33,7 @@ _AUTOMATION_BADGE: dict[AutomationLevel, str] = {
     AutomationLevel.MANUAL: "✋ manual",
 }
 
-_ALL_SYSTEMS: list[SystemName] = list(SYSTEM_AUTOMATION_LEVELS)
+_ALL_SYSTEMS: list[SystemName] = [s for s in SYSTEM_AUTOMATION_LEVELS if s not in DISABLED_SYSTEMS]
 
 
 def _system_label(system: SystemName) -> str:
