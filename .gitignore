@@ -210,3 +210,5 @@ __marimo__/
 corpora/scraped_data/*
 
 .idea/
+.codex
+data/*

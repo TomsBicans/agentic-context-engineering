@@ -1,0 +1,33 @@
+[project]
+name = "result-processor"
+version = "0.1.0"
+description = "Post-experiment processing: A2 examiner agent, charts, LaTeX tables, Streamlit dashboard"
+readme = "README.md"
+authors = [
+    { name = "Toms Bicāns", email = "tomsbicans@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "agent",
+    "experiment-runner",
+    "kaleido>=1.2.0",
+    "pandas>=3.0.2",
+    "plotly>=6.7.0",
+    "pydantic>=2.12.5",
+    "pytest>=9.0.2",
+    "rich>=14.3.3",
+    "streamlit>=1.56.0",
+    "tabulate>=0.10.0",
+    "tqdm>=4.67.3",
+]
+
+[project.scripts]
+result-processor = "result_processor.main:main"
+
+[build-system]
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+agent = { workspace = true, editable = true }
+experiment-runner = { workspace = true, editable = true }

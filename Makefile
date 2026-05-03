@@ -1,3 +1,5 @@
+include setup/*.mk
+
 PYTHON := python3
 
 # Setup
@@ -16,9 +18,13 @@ test_cli:
 test_agent:
 	uv run --package agent ${PYTHON} -m pytest -v
 
+test_result_processor:
+	uv run --package result-processor ${PYTHON} -m pytest packages/result_processor/src/result_processor/tests/ -v
+
 test_all:
 	uv run --package agent ${PYTHON} -m pytest -v
 	uv run --package cli ${PYTHON} -m pytest packages/cli/src/cli/tests/ -v
+	uv run --package result-processor ${PYTHON} -m pytest packages/result_processor/src/result_processor/tests/ -v
 
 install_tools:
 	uv tool install ./packages/cli
@@ -104,6 +110,9 @@ model=qwen3-vl:8b
 model=qwen3:14b
 model=gpt-oss:20b
 model=qwen3:4b
+model=qwen3:8b
+model=qwen2.5-coder:14b-instruct
+model=qwen3:14b
 
 q="how many Extreme trans-Neptunian objects are there?"
 q="Where can i find the list of minor planets?"
@@ -212,3 +221,109 @@ download_corpora:
 	tar -xzf ${corpora_dir}/solar_system_wiki.tar.gz -C ${corpora_dir}
 	tar -xzf ${corpora_dir}/scipy_repo.tar.gz        -C ${corpora_dir}
 	rm ${corpora_dir}/oblivion_wiki.tar.gz ${corpora_dir}/solar_system_wiki.tar.gz ${corpora_dir}/scipy_repo.tar.gz
+
+# Experiment runner
+# Results are written to experiment_results/ as timestamped JSONL files.
+# Every invocation produces a new file — no run is ever overwritten.
+#
+# Variables (override on command line):
+#   corpus_id   — which corpus to query  (default: solar_system_wiki)
+#   q_id        — single question ID to run (e.g. ss_L1_001)
+#   model       — LLM model name          (default: qwen3:4b, set above)
+#   ctx         — context window size     (default: 8192, set above)
+#   corpus      — path to corpus data dir (default: ./corpora/scraped_data/solar_system_wiki)
+
+data_dir=./data
+experiment_results_dir=${data_dir}/experiment_results
+questions_dir=./corpora/questions
+corpus_id=solar_system_wiki
+questions_file=${questions_dir}/solar_system.json
+q_id=ss_L1_001 ss_L2_001
+
+experiment_runner_h:
+	uv run --package experiment_runner experiment-runner --help
+
+# Run a single question through the ACE system.
+# Usage:
+#   make ace_experiment_single
+#   make ace_experiment_single q_id=ss_L2_003
+#   make ace_experiment_single corpus_id=oblivion_wiki questions_file=./corpora/questions/oblivion.json corpus=./corpora/scraped_data/oblivion_wiki q_id=ob_L1_001
+ace_experiment_single:
+	uv run --package experiment_runner experiment-runner run \
+		--system ace \
+		--corpus ${corpus_id} \
+		--questions-file ${questions_file} \
+		--question-ids ${q_id} \
+		--output-dir ${experiment_results_dir} \
+		--model ${model} \
+		--num-ctx ${ctx} \
+		--path-to-corpora "${corpus}"
+
+# Dry-run: print the plan without executing.
+ace_experiment_dry:
+	uv run --package experiment_runner experiment-runner run \
+		--system ace \
+		--corpus ${corpus_id} \
+		--questions-file ${questions_file} \
+		--question-ids ${q_id} \
+		--output-dir ${experiment_results_dir} \
+		--model ${model} \
+		--num-ctx ${ctx} \
+		--path-to-corpora "${corpus}" \
+		--dry-run
+
+# Result processor — A2 examiner analysis, charts, LaTeX tables, dashboard.
+# All artefacts are produced from the JSONL files written by experiment_runner.
+#
+# Variables (override on command line):
+#   examiner_model — model used for A2 verification (default: qwen3:4b)
+#   ctx            — context window for the examiner (default: 8192, set above)
+#   corpora_root   — root containing oblivion_wiki/, solar_system_wiki/, scipy_repo/
+#   figures_dir    — output directory for charts/tables (default: ./data/figures)
+#   port           — Streamlit port (default: 8501)
+
+analysis_results_dir=${data_dir}/analysis_results
+figures_dir=${data_dir}/figures
+corpora_root=./corpora/scraped_data
+examiner_model=qwen3:4b
+port=8501
+
+result_processor_h:
+	uv run --package result_processor result-processor --help
+
+# Analyze: run the A2 examiner over experiment_results/*.jsonl.
+# Idempotent — already-analyzed runs are skipped unless `resume=0` is set.
+analyze:
+	uv run --package result_processor result-processor analyze \
+		--experiment-results-dir ${experiment_results_dir} \
+		--output-dir ${analysis_results_dir} \
+		--path-to-corpora ${corpora_root} \
+		--examiner-model ${examiner_model} \
+		--num-ctx ${ctx}
+
+# Re-analyze everything from scratch.
+analyze_force:
+	uv run --package result_processor result-processor analyze \
+		--experiment-results-dir ${experiment_results_dir} \
+		--output-dir ${analysis_results_dir} \
+		--path-to-corpora ${corpora_root} \
+		--examiner-model ${examiner_model} \
+		--num-ctx ${ctx} \
+		--no-resume
+
+# Visualize: generate Plotly figures (HTML by default) and LaTeX tables.
+# Override formats with: make visualize formats="html png pdf"
+formats=html
+visualize:
+	uv run --package result_processor result-processor visualize \
+		--experiment-results-dir ${experiment_results_dir} \
+		--analysis-results-dir ${analysis_results_dir} \
+		--output-dir ${figures_dir} \
+		--formats ${formats}
+
+# Streamlit dashboard — interactive UI for browsing runs and dispatching analyze/visualize.
+dashboard:
+	uv run --package result_processor result-processor dashboard \
+		--port ${port} \
+		--experiment-results-dir ${experiment_results_dir} \
+		--analysis-results-dir ${analysis_results_dir}
