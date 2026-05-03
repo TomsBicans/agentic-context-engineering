@@ -102,7 +102,7 @@ def _analyze_one(
     answer = run.answer_text or ""
 
     citations = extract_citations(answer)
-    uncited_sentences = split_sentences(answer) if not citations else []
+    uncited_sentences = split_sentences(answer)
 
     claim_analyses: list[ClaimAnalysis] = []
 

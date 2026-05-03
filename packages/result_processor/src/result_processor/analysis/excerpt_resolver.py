@@ -41,7 +41,15 @@ class ExcerptResolver:
         if a < 0 or b <= a:
             return None
 
-        path = self.corpus_dir(corpus) / relative_path
+        requested_path = Path(relative_path)
+        if requested_path.is_absolute():
+            return None
+
+        corpus_root = self.corpus_dir(corpus).resolve()
+        path = (corpus_root / requested_path).resolve()
+        if not path.is_relative_to(corpus_root):
+            return None
+
         if not path.exists() or not path.is_file():
             return None
 

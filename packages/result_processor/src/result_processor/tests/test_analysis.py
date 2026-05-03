@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 from types import SimpleNamespace
 
 import pytest
 
+from experiment_runner.commands import run as run_command
+from experiment_runner.models.config import RunConfig
+from experiment_runner.models.enums import AutomationLevel, Corpus, SystemName
 from experiment_runner.models.result import RunResult
 from result_processor.analysis.citation_parser import extract_citations, split_sentences, strip_reasoning
 from result_processor.analysis.examiner import ExaminerLLM, _ClaimVerdict
@@ -47,6 +51,17 @@ def test_excerpt_resolver_reads_clamped_ranges_and_rejects_bad_references(tmp_pa
     assert resolver.resolve(RunResult.model_validate(run_payload()).corpus, "planets.md", 1, 10) == "Venus\nEarth"
     assert resolver.resolve(RunResult.model_validate(run_payload()).corpus, "missing.md", 0, 1) is None
     assert resolver.resolve(RunResult.model_validate(run_payload()).corpus, "planets.md", 2, 2) is None
+
+
+def test_excerpt_resolver_rejects_paths_outside_corpus(tmp_path) -> None:
+    corpus_dir = tmp_path / "solar_system_wiki"
+    corpus_dir.mkdir()
+    (tmp_path / "secret.md").write_text("do not read\n", encoding="utf-8")
+    resolver = ExcerptResolver(tmp_path)
+    corpus = RunResult.model_validate(run_payload()).corpus
+
+    assert resolver.resolve(corpus, "../secret.md", 0, 1) is None
+    assert resolver.resolve(corpus, str(tmp_path / "secret.md"), 0, 1) is None
 
 
 def test_jsonl_io_round_trips_runs_and_existing_analysis_ids(tmp_path) -> None:
@@ -108,6 +123,56 @@ def test_analyze_one_marks_uncited_sentences_as_bad_references() -> None:
     assert result.claims_bad_reference == 2
     assert result.claims_without_citation_count == 2
     assert result.verdict == Verdict.FAIL
+
+
+def test_analyze_one_counts_uncited_sentences_in_partially_cited_answers() -> None:
+    run = RunResult.model_validate(
+        run_payload(answer_text="[Jupiter is a planet.] [file:planets.md, lines:0-1] Saturn is made of cheese.")
+    )
+
+    class Resolver:
+        def resolve(self, corpus, relative_path, a, b):
+            return "Jupiter is a planet."
+
+    class Examiner:
+        def classify_claim(self, **kwargs):
+            return SimpleNamespace(status=ClaimStatus.SUPPORTED, justification="ok")
+
+        def summarize(self, **kwargs):
+            return SimpleNamespace(helpfulness_rating=2, notes="One uncited claim.")
+
+    result = _analyze_one(run, Resolver(), Examiner(), "qwen3:4b")
+
+    assert result.claims_total == 2
+    assert result.claims_supported == 1
+    assert result.claims_bad_reference == 1
+    assert result.claims_without_citation_count == 1
+    assert result.support_rate == 0.5
+    assert result.verdict == Verdict.FAIL
+
+
+def test_experiment_output_path_uses_collision_resistant_suffix(monkeypatch, tmp_path) -> None:
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 5, 4, 12, 30, 5, 123456, tzinfo=timezone.utc)
+
+    uuids = iter([SimpleNamespace(hex="aaaabbbbccccdddd"), SimpleNamespace(hex="eeeeffff00001111")])
+    monkeypatch.setattr(run_command, "datetime", FixedDatetime)
+    monkeypatch.setattr(run_command, "uuid4", lambda: next(uuids))
+    config = RunConfig(
+        system=SystemName.ACE,
+        corpus=Corpus.SOLAR_SYSTEM_WIKI,
+        model="qwen3:4b",
+        automation_level=AutomationLevel.FULL,
+    )
+
+    first = run_command._output_path(str(tmp_path), config)
+    second = run_command._output_path(str(tmp_path), config)
+
+    assert first != second
+    assert first.name == "ace__solar_system_wiki__20260504T123005123456Z__aaaabbbb.jsonl"
+    assert second.name == "ace__solar_system_wiki__20260504T123005123456Z__eeeeffff.jsonl"
 
 
 def test_aggregate_counts_statuses_and_pass_threshold() -> None:

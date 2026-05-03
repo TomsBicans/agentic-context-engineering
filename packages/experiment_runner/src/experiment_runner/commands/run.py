@@ -5,6 +5,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 from experiment_runner.models.config import RunConfig
 from experiment_runner.models.enums import AutomationLevel, Corpus, SystemName
@@ -26,8 +27,11 @@ def _load_questions(path: str, ids: list[str] | None) -> list[Question]:
 
 
 def _output_path(output_dir: str, config: RunConfig) -> Path:
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    filename = f"{config.system.value}__{config.corpus.value}__{ts}.jsonl"
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    filename = (
+        f"{config.system.value}__{config.corpus.value}__{ts}"
+        f"__{uuid4().hex[:8]}.jsonl"
+    )
     return Path(output_dir) / filename
 
 
@@ -66,7 +70,7 @@ def run_experiment(args: argparse.Namespace) -> None:
 
     runner.setup()
     try:
-        with out_path.open("w", encoding="utf-8") as f:
+        with out_path.open("x", encoding="utf-8") as f:
             for i, question in enumerate(questions, 1):
                 sys.stderr.write(f"[{i}/{total}] {question.id}: {question.question[:72]}\n")
                 result = runner.run(question)
