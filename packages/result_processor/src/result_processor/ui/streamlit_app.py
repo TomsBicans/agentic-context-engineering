@@ -17,6 +17,8 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from experiment_runner.models.enums import AutomationLevel, SystemName
+from experiment_runner.runners.registry import SYSTEM_AUTOMATION_LEVELS
 from result_processor.visualization.loader import (
     build_dataframe,
     load_analyses,
@@ -25,18 +27,19 @@ from result_processor.visualization.loader import (
 from result_processor.visualization.plots import ALL_PLOTS
 
 
-SYSTEM_OPTIONS = [
-    "ace",
-    "claude_code_cloud",
-    "claude_code_local",
-    "chatgpt_codex",
-    "clawcode",
-    "anythingllm",
-    "openclaw",
-    "open_webui",
-    "privategpt",
-    "perplexity",
-]
+_AUTOMATION_BADGE: dict[AutomationLevel, str] = {
+    AutomationLevel.FULL: "⚙ automated",
+    AutomationLevel.PARTIAL: "◑ partial",
+    AutomationLevel.MANUAL: "✋ manual",
+}
+
+_ALL_SYSTEMS: list[SystemName] = list(SYSTEM_AUTOMATION_LEVELS)
+
+
+def _system_label(system: SystemName) -> str:
+    badge = _AUTOMATION_BADGE.get(SYSTEM_AUTOMATION_LEVELS[system], "?")
+    return f"{system.value}  [{badge}]"
+
 
 CORPUS_DEFAULTS: dict[str, tuple[str, str]] = {
     "solar_system_wiki": (
@@ -625,8 +628,32 @@ def _tab_run_experiment(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
 
 
 def _render_run_experiment_form(cfg: dict) -> None:
+    kind_filter = st.radio(
+        "Filter by runner type",
+        options=["all", "automated", "manual"],
+        format_func=lambda v: {
+            "all": "All systems",
+            "automated": "⚙ Automated only",
+            "manual": "✋ Manual only",
+        }[v],
+        horizontal=True,
+        key="system_kind_filter",
+    )
+    if kind_filter == "automated":
+        visible = [s for s in _ALL_SYSTEMS if SYSTEM_AUTOMATION_LEVELS[s] == AutomationLevel.FULL]
+    elif kind_filter == "manual":
+        visible = [s for s in _ALL_SYSTEMS if SYSTEM_AUTOMATION_LEVELS[s] == AutomationLevel.MANUAL]
+    else:
+        visible = _ALL_SYSTEMS
+
     cols = st.columns(2)
-    system = cols[0].selectbox("system", SYSTEM_OPTIONS, index=0)
+    system_obj = cols[0].selectbox(
+        "system",
+        visible,
+        format_func=_system_label,
+        key="system_select",
+    )
+    system = system_obj.value
     corpus = cols[1].selectbox("corpus", list(CORPUS_DEFAULTS.keys()), index=0)
 
     default_q_file, default_corpora_root = CORPUS_DEFAULTS[corpus]

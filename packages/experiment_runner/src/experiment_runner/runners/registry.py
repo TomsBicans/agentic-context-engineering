@@ -1,11 +1,25 @@
 from experiment_runner.models.config import RunConfig
-from experiment_runner.models.enums import SystemName
+from experiment_runner.models.enums import AutomationLevel, SystemName
 from experiment_runner.runners.base import BaseRunner
 
 
 # Populated lazily on first access to avoid importing heavy dependencies at
 # module load time (e.g. importing the agent package triggers LangChain init).
 _REGISTRY: dict[SystemName, type[BaseRunner]] | None = None
+
+# Static metadata — no heavy imports needed.
+SYSTEM_AUTOMATION_LEVELS: dict[SystemName, AutomationLevel] = {
+    SystemName.ACE: AutomationLevel.FULL,
+    SystemName.CLAUDE_CODE_LOCAL: AutomationLevel.FULL,
+    SystemName.CHATGPT_CODEX: AutomationLevel.FULL,
+    SystemName.CLAWCODE: AutomationLevel.FULL,
+    SystemName.ANYTHINGLLM: AutomationLevel.FULL,
+    SystemName.OPENCLAW: AutomationLevel.FULL,
+    SystemName.CLAUDE_CODE_CLOUD: AutomationLevel.MANUAL,
+    SystemName.OPEN_WEBUI: AutomationLevel.MANUAL,
+    SystemName.PRIVATEGPT: AutomationLevel.MANUAL,
+    SystemName.PERPLEXITY: AutomationLevel.MANUAL,
+}
 
 
 def _build_registry() -> dict[SystemName, type[BaseRunner]]:
