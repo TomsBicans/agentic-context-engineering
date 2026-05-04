@@ -25,6 +25,7 @@ from experiment_runner.commands.suite import (
     summarize_suite_state,
 )
 from experiment_runner.models.enums import AutomationLevel, Corpus, SystemName
+from experiment_runner.models.result import RunResult
 from experiment_runner.models.suite import (
     ExperimentSuiteConfig,
     SuiteCorpusSelection,
@@ -583,11 +584,19 @@ def _render_run_details(df: pd.DataFrame, analyses, runs, run_id: str) -> None:
     row = df[df["run_id"] == run_id].iloc[0]
     run = next((r for r in runs if r.run_id == run_id), None)
 
-    cols = st.columns(4)
+    runtime = row.get("execution_time_s")
+    runtime_label = f"{runtime:.2f}s" if pd.notna(runtime) else "—"
+    tool_calls = row.get("tool_call_count")
+    tool_calls_label = int(tool_calls) if pd.notna(tool_calls) else "—"
+
+    cols = st.columns(6)
     cols[0].metric("System", row["system_name"])
     cols[1].metric("Corpus", row["corpus"])
     cols[2].metric("Level", row["level"] if pd.notna(row["level"]) else "—")
-    cols[3].metric("Run date", _format_run_date(row.get("created_at")))
+    cols[3].metric("Model", row.get("model", "—"))
+    cols[4].metric("Runtime", runtime_label)
+    cols[5].metric("Tool calls", tool_calls_label)
+    st.caption(f"Run date: {_format_run_date(row.get('created_at'))}")
 
     st.markdown(f"**Question:** {row['question_text']}")
     with st.expander("Answer", expanded=True):
@@ -710,6 +719,65 @@ def _result_files_from_suite_states(state_paths: list[Path]) -> list[str]:
     return sorted(paths)
 
 
+def _run_id_from_result_path(result_path: str | None) -> str | None:
+    run = _run_from_result_path(result_path)
+    return run.run_id if run else None
+
+
+def _run_from_result_path(result_path: str | None) -> RunResult | None:
+    if not result_path:
+        return None
+    path = Path(result_path)
+    if not path.is_file():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    return RunResult.model_validate_json(line)
+                except Exception:
+                    continue
+    except OSError:
+        return None
+    return None
+
+
+def _dataframe_for_single_run(run: RunResult) -> pd.DataFrame:
+    tokens_total = (
+        run.metrics.tokens.total
+        if run.metrics and run.metrics.tokens
+        else None
+    )
+    return pd.DataFrame.from_records([
+        {
+            "run_id": run.run_id,
+            "created_at": run.created_at,
+            "run_date": run.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "system_name": run.system_name.value,
+            "corpus": run.corpus.value,
+            "model": run.model,
+            "reasoning_enabled": run.reasoning_enabled,
+            "question_id": run.question_id,
+            "question_text": run.question_text,
+            "level": _parse_question_level(run.question_id),
+            "automation_level": run.automation_level.value,
+            "answer_text": run.answer_text,
+            "execution_time_s": run.metrics.execution_time_s if run.metrics else None,
+            "step_count": run.metrics.step_count if run.metrics else None,
+            "tool_call_count": run.metrics.tool_call_count if run.metrics else None,
+            "tokens_total": tokens_total,
+            "corpus_used": run.metrics.corpus_used if run.metrics else None,
+        }
+    ])
+
+
+def _parse_question_level(question_id: str) -> int | None:
+    match = re.search(r"_L(\d+)_", question_id or "")
+    return int(match.group(1)) if match else None
+
+
 def _suite_state_dataframe(state_path: Path) -> tuple[dict, pd.DataFrame]:
     if not state_path.is_file():
         return {}, pd.DataFrame()
@@ -725,6 +793,7 @@ def _suite_state_dataframe(state_path: Path) -> tuple[dict, pd.DataFrame]:
             "question_id": task.question_id,
             "system": task.system.value,
             "result_path": task.result_path,
+            "run_id": _run_id_from_result_path(task.result_path),
             "return_code": task.return_code,
             "error": task.error,
         }
@@ -733,7 +802,7 @@ def _suite_state_dataframe(state_path: Path) -> tuple[dict, pd.DataFrame]:
     return summary, pd.DataFrame(rows)
 
 
-def _render_suite_progress(state_path: Path) -> None:
+def _render_suite_progress(state_path: Path, df: pd.DataFrame, analyses, runs) -> None:
     summary, tasks_df = _suite_state_dataframe(state_path)
     if not summary:
         st.info("No persisted suite state yet.")
@@ -756,7 +825,35 @@ def _render_suite_progress(state_path: Path) -> None:
         st.warning("Cancellation has been requested. The suite stops before starting the next task.")
 
     if not tasks_df.empty:
-        st.dataframe(tasks_df, width="stretch", hide_index=True)
+        event = st.dataframe(
+            tasks_df,
+            width="stretch",
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="suite_tasks_table",
+        )
+        selected_rows = event.selection.rows if event.selection else []
+        if selected_rows:
+            selected = tasks_df.iloc[selected_rows[0]]
+            run_id = selected.get("run_id")
+            if run_id and not df.empty and run_id in set(df["run_id"]):
+                st.divider()
+                _render_run_details(df, analyses, runs, run_id)
+            elif selected.get("result_path"):
+                run = _run_from_result_path(selected.get("result_path"))
+                if run is None:
+                    st.warning("The selected task result file could not be read.")
+                else:
+                    st.divider()
+                    _render_run_details(
+                        _dataframe_for_single_run(run),
+                        analyses,
+                        [run],
+                        run.run_id,
+                    )
+            else:
+                st.info("The selected task has not produced a result file yet.")
 
 
 def _suite_task_preview(config: ExperimentSuiteConfig) -> pd.DataFrame:
@@ -810,7 +907,7 @@ def _suggest_suite_name(
     return suite_slug(raw_name)
 
 
-def _tab_experiment_suite(cfg: dict) -> None:
+def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
     st.subheader("Experiment suite")
     st.caption(
         "Configure a persisted multi-system benchmark suite. The suite expands to one "
@@ -1002,7 +1099,7 @@ def _tab_experiment_suite(cfg: dict) -> None:
 
     st.caption(f"Config: `{config_path}`")
     st.caption(f"State: `{state_path}`")
-    _render_suite_progress(state_path)
+    _render_suite_progress(state_path, df, analyses, runs)
 
     if launcher_log_path.exists():
         with st.expander("Suite launcher output", expanded=False):
@@ -1288,7 +1385,7 @@ def main() -> None:
     )
 
     with suite_tab:
-        _tab_experiment_suite(cfg)
+        _tab_experiment_suite(cfg, df, analyses, runs)
 
     with run_tab:
         _tab_run_experiment(cfg, df, analyses, runs)

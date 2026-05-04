@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 
@@ -194,6 +195,27 @@ def test_result_files_from_suite_states_returns_existing_result_paths(tmp_path) 
     state_path.write_text(state.model_dump_json(), encoding="utf-8")
 
     assert ui._result_files_from_suite_states([state_path]) == [str(existing.resolve())]
+
+
+def test_run_id_from_result_path_reads_first_valid_jsonl_row(tmp_path) -> None:
+    path = tmp_path / "result.jsonl"
+    path.write_text("\n{bad json}\n" + json.dumps(run_payload(run_id="run-123")) + "\n", encoding="utf-8")
+
+    assert ui._run_id_from_result_path(str(path)) == "run-123"
+    assert ui._run_id_from_result_path(str(tmp_path / "missing.jsonl")) is None
+
+
+def test_dataframe_for_single_run_contains_detail_fields(tmp_path) -> None:
+    path = tmp_path / "result.jsonl"
+    path.write_text(json.dumps(run_payload(run_id="run-123")) + "\n", encoding="utf-8")
+    run = ui._run_from_result_path(str(path))
+
+    df = ui._dataframe_for_single_run(run)
+
+    assert df.loc[0, "run_id"] == "run-123"
+    assert df.loc[0, "system_name"] == "ace"
+    assert df.loc[0, "execution_time_s"] == 12.5
+    assert df.loc[0, "tool_call_count"] == 2
 
 
 def test_shell_command_quotes_arguments() -> None:
