@@ -135,6 +135,23 @@ def test_suite_paths_use_slug_and_default_state_name(tmp_path) -> None:
     assert launcher_log_path == tmp_path / "thesis-smoke-suite.state.launcher.log"
 
 
+def test_suggest_suite_name_uses_selected_dimensions() -> None:
+    name = ui._suggest_suite_name(
+        systems=[SystemName.ACE, SystemName.CLAWCODE],
+        models=["qwen3:8b"],
+        corpus_selections=[
+            SuiteCorpusSelection(
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="questions.json",
+                path_to_corpora="corpora",
+                levels=[2],
+            )
+        ],
+    )
+
+    assert name == "solar-system-wiki-l2-qwen3-8b-ace-clawcode"
+
+
 def test_result_files_from_suite_states_returns_existing_result_paths(tmp_path) -> None:
     existing = tmp_path / "result.jsonl"
     existing.write_text("{}\n", encoding="utf-8")

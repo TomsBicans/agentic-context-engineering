@@ -777,6 +777,39 @@ def _suite_task_preview(config: ExperimentSuiteConfig) -> pd.DataFrame:
     )
 
 
+def _compact_names(values: list[str], *, max_items: int = 3) -> str:
+    if not values:
+        return "none"
+    if len(values) <= max_items:
+        return "-".join(values)
+    return "-".join(values[:max_items]) + f"-plus{len(values) - max_items}"
+
+
+def _suggest_suite_name(
+    *,
+    systems: list[SystemName],
+    models: list[str],
+    corpus_selections: list[SuiteCorpusSelection],
+) -> str:
+    corpus_parts: list[str] = []
+    for selection in corpus_selections:
+        part = selection.corpus.value.replace("_", "-")
+        if selection.levels:
+            part += "-l" + "-".join(str(level) for level in sorted(selection.levels))
+        if selection.question_ids:
+            part += f"-q{len(selection.question_ids)}"
+        corpus_parts.append(part)
+
+    raw_name = "-".join(
+        [
+            _compact_names(corpus_parts, max_items=2),
+            _compact_names(models, max_items=2),
+            _compact_names([system.value for system in systems], max_items=3),
+        ]
+    )
+    return suite_slug(raw_name)
+
+
 def _tab_experiment_suite(cfg: dict) -> None:
     st.subheader("Experiment suite")
     st.caption(
@@ -809,8 +842,15 @@ def _tab_experiment_suite(cfg: dict) -> None:
         except Exception as exc:
             st.warning(f"Could not load suite config: {exc}")
 
-    default_name = loaded_config.name if loaded_config else "thesis-smoke-suite"
-    suite_name = st.text_input("suite_name", value=default_name)
+    if "suite_name_input" not in st.session_state:
+        st.session_state["suite_name_input"] = loaded_config.name if loaded_config else "thesis-smoke-suite"
+    if loaded_config and st.session_state.get("suite_loaded_name_for") != loaded_path:
+        st.session_state["suite_name_input"] = loaded_config.name
+        st.session_state["suite_loaded_name_for"] = loaded_path
+    if "suite_name_pending" in st.session_state:
+        st.session_state["suite_name_input"] = st.session_state.pop("suite_name_pending")
+
+    suite_name_container = st.container()
 
     default_systems = loaded_config.systems if loaded_config else [SystemName.ACE]
     selected_systems = st.multiselect(
@@ -878,6 +918,19 @@ def _tab_experiment_suite(cfg: dict) -> None:
                     question_ids=selected_ids,
                 )
             )
+
+    suggested_name = _suggest_suite_name(
+        systems=selected_systems,
+        models=selected_models,
+        corpus_selections=corpus_selections,
+    )
+    with suite_name_container:
+        suite_name = st.text_input("suite_name", key="suite_name_input")
+        cols = st.columns([1, 3])
+        if cols[0].button("Generate suite name", width="stretch"):
+            st.session_state["suite_name_pending"] = suggested_name
+            st.rerun()
+        cols[1].caption(f"Suggested: `{suggested_name}`")
 
     cols = st.columns(3)
     num_ctx = cols[0].number_input(
