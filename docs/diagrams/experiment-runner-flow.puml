@@ -1,0 +1,63 @@
+@startuml
+title Experiment Runner - Batch Execution Flow
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam activity {
+  BackgroundColor #F8F8F8
+  BorderColor #555555
+  DiamondBackgroundColor #FFF7E6
+  DiamondBorderColor #555555
+}
+
+start
+
+:Parse CLI or dashboard request;
+:Build RunConfig\n(system, corpus, model,\nautomation level, corpus path);
+:Load question file;
+
+if (Question IDs selected?) then (yes)
+  :Filter question list;
+  if (Any selected ID missing?) then (yes)
+    :Raise configuration error;
+    stop
+  endif
+endif
+
+if (Dry run?) then (yes)
+  :Print resolved configuration\nand selected questions;
+  stop
+endif
+
+:Create unique output JSONL path;
+:Instantiate system runner\nthrough runner registry;
+:runner.setup();
+
+repeat
+  :Take next question;
+  :runner.run(question);
+
+  if (System invocation succeeds?) then (yes)
+    :Collect answer text,\nmetrics, and optional trace;
+  else (no)
+    :Store answer_error in RunResult\ninstead of aborting the batch;
+  endif
+
+  :Append RunResult JSON\nas one JSONL row;
+  :Flush output file;
+repeat while (More questions?) is (yes)
+
+:runner.teardown();
+:Print result file path;
+
+stop
+
+legend right
+  Main purpose:
+  execute the same question set against
+  different systems while preserving a
+  common result schema for later analysis.
+endlegend
+
+@enduml

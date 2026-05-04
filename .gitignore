@@ -212,3 +212,4 @@ corpora/scraped_data/*
 .idea/
 .codex
 data/*
+docs/diagrams/plantuml.jar
