@@ -30,3 +30,12 @@ make corpus_scraper_scipy
 ```
 make agent_test
 ```
+
+# Architecture diagrams
+
+High-level PlantUML diagrams for the thesis and project review are stored in `docs/diagrams`.
+Generate the SVG versions with:
+
+```
+make diagrams
+```
