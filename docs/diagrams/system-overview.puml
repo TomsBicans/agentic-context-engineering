@@ -1,0 +1,70 @@
+@startuml
+!pragma layout smetana
+title ACE Evaluation System - High-Level Components
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam defaultFontName Arial
+skinparam ArrowColor #444444
+skinparam component {
+  BorderColor #555555
+  BackgroundColor #F8F8F8
+}
+skinparam database {
+  BorderColor #555555
+  BackgroundColor #F4F8FF
+}
+
+actor Researcher
+
+package "Corpus preparation" {
+  component "Corpus Scraper\n(corpus_scraper CLI)" as scraper
+  database "Scraped corpora\nraw files, text files,\nmanifest.jsonl" as corpora
+}
+
+package "Question answering" {
+  component "ACE Agent\nLangGraph + Ollama\nwith corpus tools" as ace
+  component "Baseline systems\nClaude Code, Codex,\nClawCode, AnythingLLM,\nmanual systems" as baselines
+}
+
+package "Experiment execution" {
+  component "Experiment Runner\nquestion batches,\nrunner registry,\ncommon RunResult schema" as runner
+  database "Experiment results\nJSONL per run batch" as run_results
+}
+
+package "Analysis and reporting" {
+  component "Result Processor\ncitation parsing,\nexcerpt resolution,\nexaminer scoring" as processor
+  component "Visualization and Dashboard\nplots, tables,\nStreamlit UI" as dashboard
+  database "Analysis results\nclaim verdicts,\nmetrics, notes" as analysis_results
+  database "Figures and tables\nSVG/HTML plots,\nLaTeX tables" as figures
+}
+
+Researcher --> scraper : define corpora
+scraper --> corpora : stores reusable corpus snapshots
+
+Researcher --> runner : choose system, corpus,\nmodel, questions
+runner --> ace : runs ACE when selected
+runner --> baselines : runs comparable systems
+ace --> corpora : reads files through tools
+baselines --> corpora : receives corpus context\nor workspace copy
+runner --> run_results : writes answers,\nmetrics, traces
+
+Researcher --> processor : analyze result files
+processor --> run_results : reads answers
+processor --> corpora : resolves cited excerpts
+processor --> analysis_results : writes claim-level verdicts
+
+dashboard --> run_results : loads runs
+dashboard --> analysis_results : loads analyses
+dashboard --> figures : exports thesis artifacts
+Researcher --> dashboard : inspect results\nand generate outputs
+
+note bottom of runner
+  All systems are normalized into the same
+  RunResult JSONL format so they can be
+  compared with the same analysis pipeline.
+end note
+
+@enduml

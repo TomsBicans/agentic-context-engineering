@@ -17,7 +17,22 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from experiment_runner.models.enums import AutomationLevel, SystemName
+from experiment_runner.commands.suite import (
+    build_suite_tasks,
+    load_suite_config,
+    load_suite_state,
+    save_suite_config,
+    summarize_suite_state,
+)
+from experiment_runner.models.enums import AutomationLevel, Corpus, SystemName
+from experiment_runner.models.result import RunResult
+from experiment_runner.models.suite import (
+    ExperimentSuiteConfig,
+    SuiteCorpusSelection,
+    SuiteTaskStatus,
+    default_state_path,
+    suite_slug,
+)
 from experiment_runner.runners.registry import DISABLED_SYSTEMS, SYSTEM_AUTOMATION_LEVELS
 from result_processor.visualization.loader import (
     build_dataframe,
@@ -34,6 +49,9 @@ _AUTOMATION_BADGE: dict[AutomationLevel, str] = {
 }
 
 _ALL_SYSTEMS: list[SystemName] = [s for s in SYSTEM_AUTOMATION_LEVELS if s not in DISABLED_SYSTEMS]
+_AUTOMATED_SYSTEMS: list[SystemName] = [
+    s for s in _ALL_SYSTEMS if SYSTEM_AUTOMATION_LEVELS[s] == AutomationLevel.FULL
+]
 
 
 def _system_label(system: SystemName) -> str:
@@ -59,6 +77,7 @@ CORPUS_DEFAULTS: dict[str, tuple[str, str]] = {
 _PROGRESS_RE = re.compile(r"^\[(\d+)/(\d+)\]\s+(.+)$")
 _RESULT_RE = re.compile(r"^results\s*(?:→|->)\s*(.+)$")
 DEFAULT_MODEL = "qwen3:4b"
+DEFAULT_SUITE_DIR = Path("./data/experiment_suites")
 
 
 def _default_dir(env_key: str, fallback: str) -> str:
@@ -147,6 +166,26 @@ def _build_experiment_run_args(
     if dry_run:
         args.append("--dry-run")
     return args
+
+
+def _build_suite_run_args(config_path: str, state_path: str) -> list[str]:
+    return _experiment_runner_cli() + [
+        "suite",
+        "run",
+        "--config",
+        config_path,
+        "--state",
+        state_path,
+    ]
+
+
+def _build_suite_cancel_args(state_path: str) -> list[str]:
+    return _experiment_runner_cli() + [
+        "suite",
+        "cancel",
+        "--state",
+        state_path,
+    ]
 
 
 def _shell_command(args: list[str]) -> str:
@@ -305,6 +344,22 @@ def _run_experiment_subprocess(
         return rc, result_path
 
 
+def _start_background_subprocess(args: list[str], log_path: Path) -> int:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log = log_path.open("a", encoding="utf-8")
+    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+    process = subprocess.Popen(
+        args,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=env,
+        start_new_session=True,
+    )
+    log.close()
+    return process.pid
+
+
 def _sidebar() -> dict:
     st.sidebar.header("Configuration")
     experiment_dir = st.sidebar.text_input(
@@ -314,6 +369,10 @@ def _sidebar() -> dict:
     analysis_dir = st.sidebar.text_input(
         "analysis_results_dir",
         value=_default_dir("RP_ANALYSIS_RESULTS_DIR", "./data/analysis_results"),
+    )
+    suite_dir = st.sidebar.text_input(
+        "experiment_suites_dir",
+        value=str(DEFAULT_SUITE_DIR),
     )
     corpora_root = st.sidebar.text_input(
         "path_to_corpora",
@@ -336,6 +395,7 @@ def _sidebar() -> dict:
     return {
         "experiment_dir": Path(experiment_dir),
         "analysis_dir": Path(analysis_dir),
+        "suite_dir": Path(suite_dir),
         "corpora_root": corpora_root,
         "examiner_model": examiner_model,
         "num_ctx": int(num_ctx),
@@ -524,11 +584,19 @@ def _render_run_details(df: pd.DataFrame, analyses, runs, run_id: str) -> None:
     row = df[df["run_id"] == run_id].iloc[0]
     run = next((r for r in runs if r.run_id == run_id), None)
 
-    cols = st.columns(4)
+    runtime = row.get("execution_time_s")
+    runtime_label = f"{runtime:.2f}s" if pd.notna(runtime) else "—"
+    tool_calls = row.get("tool_call_count")
+    tool_calls_label = int(tool_calls) if pd.notna(tool_calls) else "—"
+
+    cols = st.columns(6)
     cols[0].metric("System", row["system_name"])
     cols[1].metric("Corpus", row["corpus"])
     cols[2].metric("Level", row["level"] if pd.notna(row["level"]) else "—")
-    cols[3].metric("Run date", _format_run_date(row.get("created_at")))
+    cols[3].metric("Model", row.get("model", "—"))
+    cols[4].metric("Runtime", runtime_label)
+    cols[5].metric("Tool calls", tool_calls_label)
+    st.caption(f"Run date: {_format_run_date(row.get('created_at'))}")
 
     st.markdown(f"**Question:** {row['question_text']}")
     with st.expander("Answer", expanded=True):
@@ -606,6 +674,436 @@ def _load_question_meta(questions_file: str) -> tuple[list[str], dict[str, str]]
         ids.append(qid)
         meta[qid] = q.get("question", "")
     return ids, meta
+
+
+def _load_question_rows(questions_file: str) -> list[dict]:
+    path = Path(questions_file)
+    if not path.is_file():
+        return []
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    return [row for row in raw if row.get("id")]
+
+
+def _suite_config_paths(suite_dir: Path) -> list[Path]:
+    if not suite_dir.exists():
+        return []
+    return sorted(p for p in suite_dir.glob("*.json") if not p.name.endswith(".state.json"))
+
+
+def _suite_state_paths(suite_dir: Path) -> list[Path]:
+    if not suite_dir.exists():
+        return []
+    return sorted(p for p in suite_dir.glob("*.state.json"))
+
+
+def _suite_paths(suite_dir: Path, config: ExperimentSuiteConfig) -> tuple[Path, Path, Path]:
+    config_path = suite_dir / f"{suite_slug(config.name)}.json"
+    state_path = default_state_path(config_path, config)
+    launcher_log_path = state_path.with_suffix(".launcher.log")
+    return config_path, state_path, launcher_log_path
+
+
+def _result_files_from_suite_states(state_paths: list[Path]) -> list[str]:
+    paths: set[str] = set()
+    for state_path in state_paths:
+        try:
+            state = load_suite_state(state_path)
+        except Exception:
+            continue
+        for task in state.tasks:
+            if task.result_path and Path(task.result_path).is_file():
+                paths.add(str(Path(task.result_path).resolve()))
+    return sorted(paths)
+
+
+def _run_id_from_result_path(result_path: str | None) -> str | None:
+    run = _run_from_result_path(result_path)
+    return run.run_id if run else None
+
+
+def _run_from_result_path(result_path: str | None) -> RunResult | None:
+    if not result_path:
+        return None
+    path = Path(result_path)
+    if not path.is_file():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    return RunResult.model_validate_json(line)
+                except Exception:
+                    continue
+    except OSError:
+        return None
+    return None
+
+
+def _dataframe_for_single_run(run: RunResult) -> pd.DataFrame:
+    tokens_total = (
+        run.metrics.tokens.total
+        if run.metrics and run.metrics.tokens
+        else None
+    )
+    return pd.DataFrame.from_records([
+        {
+            "run_id": run.run_id,
+            "created_at": run.created_at,
+            "run_date": run.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "system_name": run.system_name.value,
+            "corpus": run.corpus.value,
+            "model": run.model,
+            "reasoning_enabled": run.reasoning_enabled,
+            "question_id": run.question_id,
+            "question_text": run.question_text,
+            "level": _parse_question_level(run.question_id),
+            "automation_level": run.automation_level.value,
+            "answer_text": run.answer_text,
+            "execution_time_s": run.metrics.execution_time_s if run.metrics else None,
+            "step_count": run.metrics.step_count if run.metrics else None,
+            "tool_call_count": run.metrics.tool_call_count if run.metrics else None,
+            "tokens_total": tokens_total,
+            "corpus_used": run.metrics.corpus_used if run.metrics else None,
+        }
+    ])
+
+
+def _parse_question_level(question_id: str) -> int | None:
+    match = re.search(r"_L(\d+)_", question_id or "")
+    return int(match.group(1)) if match else None
+
+
+def _suite_state_dataframe(state_path: Path) -> tuple[dict, pd.DataFrame]:
+    if not state_path.is_file():
+        return {}, pd.DataFrame()
+    state = load_suite_state(state_path)
+    summary = summarize_suite_state(state)
+    rows = [
+        {
+            "index": task.index,
+            "status": task.status.value,
+            "model": task.model,
+            "corpus": task.corpus.value,
+            "level": task.level,
+            "question_id": task.question_id,
+            "system": task.system.value,
+            "result_path": task.result_path,
+            "run_id": _run_id_from_result_path(task.result_path),
+            "return_code": task.return_code,
+            "error": task.error,
+        }
+        for task in state.tasks
+    ]
+    return summary, pd.DataFrame(rows)
+
+
+def _render_suite_progress(state_path: Path, df: pd.DataFrame, analyses, runs) -> None:
+    summary, tasks_df = _suite_state_dataframe(state_path)
+    if not summary:
+        st.info("No persisted suite state yet.")
+        return
+
+    total = int(summary["total"])
+    completed = int(summary["completed"])
+    progress = completed / total if total else 0.0
+    st.progress(progress, text=f"{completed}/{total} task(s) completed")
+
+    cols = st.columns(6)
+    cols[0].metric("Total", total)
+    cols[1].metric("Succeeded", summary[SuiteTaskStatus.SUCCEEDED.value])
+    cols[2].metric("Failed", summary[SuiteTaskStatus.FAILED.value])
+    cols[3].metric("Running", summary[SuiteTaskStatus.RUNNING.value])
+    cols[4].metric("Pending", summary[SuiteTaskStatus.PENDING.value])
+    cols[5].metric("Cancelled", summary[SuiteTaskStatus.CANCELLED.value])
+
+    if summary["cancel_requested"]:
+        st.warning("Cancellation has been requested. The suite stops before starting the next task.")
+
+    if not tasks_df.empty:
+        event = st.dataframe(
+            tasks_df,
+            width="stretch",
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="suite_tasks_table",
+        )
+        selected_rows = event.selection.rows if event.selection else []
+        if selected_rows:
+            selected = tasks_df.iloc[selected_rows[0]]
+            run_id = selected.get("run_id")
+            if run_id and not df.empty and run_id in set(df["run_id"]):
+                st.divider()
+                _render_run_details(df, analyses, runs, run_id)
+            elif selected.get("result_path"):
+                run = _run_from_result_path(selected.get("result_path"))
+                if run is None:
+                    st.warning("The selected task result file could not be read.")
+                else:
+                    st.divider()
+                    _render_run_details(
+                        _dataframe_for_single_run(run),
+                        analyses,
+                        [run],
+                        run.run_id,
+                    )
+            else:
+                st.info("The selected task has not produced a result file yet.")
+
+
+def _suite_task_preview(config: ExperimentSuiteConfig) -> pd.DataFrame:
+    tasks = build_suite_tasks(config)
+    return pd.DataFrame(
+        [
+            {
+                "index": task.index,
+                "model": task.model,
+                "corpus": task.corpus.value,
+                "level": task.level,
+                "question_id": task.question_id,
+                "system": task.system.value,
+                "command": _shell_command(task.command),
+            }
+            for task in tasks
+        ]
+    )
+
+
+def _compact_names(values: list[str], *, max_items: int = 3) -> str:
+    if not values:
+        return "none"
+    if len(values) <= max_items:
+        return "-".join(values)
+    return "-".join(values[:max_items]) + f"-plus{len(values) - max_items}"
+
+
+def _suggest_suite_name(
+    *,
+    systems: list[SystemName],
+    models: list[str],
+    corpus_selections: list[SuiteCorpusSelection],
+) -> str:
+    corpus_parts: list[str] = []
+    for selection in corpus_selections:
+        part = selection.corpus.value.replace("_", "-")
+        if selection.levels:
+            part += "-l" + "-".join(str(level) for level in sorted(selection.levels))
+        if selection.question_ids:
+            part += f"-q{len(selection.question_ids)}"
+        corpus_parts.append(part)
+
+    raw_name = "-".join(
+        [
+            _compact_names(corpus_parts, max_items=2),
+            _compact_names(models, max_items=2),
+            _compact_names([system.value for system in systems], max_items=3),
+        ]
+    )
+    return suite_slug(raw_name)
+
+
+def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
+    st.subheader("Experiment suite")
+    st.caption(
+        "Configure a persisted multi-system benchmark suite. The suite expands to one "
+        "`experiment-runner run` command per question/system/model task."
+    )
+
+    suite_dir: Path = cfg["suite_dir"]
+    suite_dir.mkdir(parents=True, exist_ok=True)
+    saved_configs = _suite_config_paths(suite_dir)
+    selected_config_path: Path | None = None
+    loaded_config: ExperimentSuiteConfig | None = None
+
+    if saved_configs:
+        selected_config_path = st.selectbox(
+            "Saved suite config",
+            saved_configs,
+            format_func=lambda p: p.name,
+            index=0,
+        )
+        if selected_config_path and st.button("Load selected suite", width="stretch"):
+            st.session_state["loaded_suite_config_path"] = str(selected_config_path)
+            st.rerun()
+
+    loaded_path = st.session_state.get("loaded_suite_config_path")
+    if loaded_path and Path(loaded_path).is_file():
+        try:
+            loaded_config = load_suite_config(loaded_path)
+            st.info(f"Loaded suite config: `{loaded_path}`")
+        except Exception as exc:
+            st.warning(f"Could not load suite config: {exc}")
+
+    if "suite_name_input" not in st.session_state:
+        st.session_state["suite_name_input"] = loaded_config.name if loaded_config else "thesis-smoke-suite"
+    if loaded_config and st.session_state.get("suite_loaded_name_for") != loaded_path:
+        st.session_state["suite_name_input"] = loaded_config.name
+        st.session_state["suite_loaded_name_for"] = loaded_path
+    if "suite_name_pending" in st.session_state:
+        st.session_state["suite_name_input"] = st.session_state.pop("suite_name_pending")
+
+    suite_name_container = st.container()
+
+    default_systems = loaded_config.systems if loaded_config else [SystemName.ACE]
+    selected_systems = st.multiselect(
+        "systems",
+        _AUTOMATED_SYSTEMS,
+        default=[s for s in default_systems if s in _AUTOMATED_SYSTEMS],
+        format_func=_system_label,
+    )
+
+    model_options = _model_options()
+    default_models = loaded_config.models if loaded_config else [DEFAULT_MODEL]
+    selected_models = st.multiselect(
+        "models",
+        model_options,
+        default=[m for m in default_models if m in model_options] or [model_options[0]],
+    )
+
+    default_corpora = [c.corpus.value for c in loaded_config.corpora] if loaded_config else ["solar_system_wiki"]
+    selected_corpora = st.multiselect(
+        "corpora",
+        list(CORPUS_DEFAULTS.keys()),
+        default=[c for c in default_corpora if c in CORPUS_DEFAULTS],
+    )
+
+    loaded_by_corpus = {c.corpus.value: c for c in loaded_config.corpora} if loaded_config else {}
+    corpus_selections: list[SuiteCorpusSelection] = []
+    for corpus in selected_corpora:
+        defaults = loaded_by_corpus.get(corpus)
+        default_q_file, default_corpus_path = CORPUS_DEFAULTS[corpus]
+        with st.expander(f"{corpus} questions", expanded=True):
+            cols = st.columns(2)
+            questions_file = cols[0].text_input(
+                f"{corpus} questions_file",
+                value=defaults.questions_file if defaults else default_q_file,
+                key=f"suite_qf_{corpus}",
+            )
+            path_to_corpora = cols[1].text_input(
+                f"{corpus} path_to_corpora",
+                value=defaults.path_to_corpora if defaults else default_corpus_path,
+                key=f"suite_corpora_{corpus}",
+            )
+            rows = _load_question_rows(questions_file)
+            levels = sorted({int(row.get("level", 0)) for row in rows if row.get("level") is not None})
+            selected_levels = st.multiselect(
+                f"{corpus} levels (empty = all)",
+                levels,
+                default=defaults.levels if defaults else [],
+                key=f"suite_levels_{corpus}",
+            )
+            ids = [row["id"] for row in rows]
+            questions_meta = {row["id"]: row.get("question", "") for row in rows}
+            selected_ids = st.multiselect(
+                f"{corpus} question_ids (empty = all selected levels)",
+                ids,
+                default=defaults.question_ids if defaults else [],
+                format_func=lambda i: f"{i} — {questions_meta.get(i, '')[:80]}",
+                key=f"suite_ids_{corpus}",
+            )
+            corpus_selections.append(
+                SuiteCorpusSelection(
+                    corpus=Corpus(corpus),
+                    questions_file=questions_file,
+                    path_to_corpora=path_to_corpora,
+                    levels=selected_levels,
+                    question_ids=selected_ids,
+                )
+            )
+
+    suggested_name = _suggest_suite_name(
+        systems=selected_systems,
+        models=selected_models,
+        corpus_selections=corpus_selections,
+    )
+    with suite_name_container:
+        suite_name = st.text_input("suite_name", key="suite_name_input")
+        cols = st.columns([1, 3])
+        if cols[0].button("Generate suite name", width="stretch"):
+            st.session_state["suite_name_pending"] = suggested_name
+            st.rerun()
+        cols[1].caption(f"Suggested: `{suggested_name}`")
+
+    cols = st.columns(3)
+    num_ctx = cols[0].number_input(
+        "suite num_ctx",
+        min_value=1024,
+        max_value=131072,
+        value=loaded_config.num_ctx if loaded_config else 8192,
+        step=1024,
+    )
+    reasoning_enabled = cols[1].checkbox(
+        "suite reasoning_enabled",
+        value=loaded_config.reasoning_enabled if loaded_config else False,
+    )
+    no_trace = cols[2].checkbox(
+        "suite no_trace",
+        value=loaded_config.no_trace if loaded_config else True,
+    )
+
+    output_dir = st.text_input(
+        "suite output_dir",
+        value=loaded_config.output_dir if loaded_config else str(cfg["experiment_dir"]),
+    )
+
+    config = ExperimentSuiteConfig(
+        name=suite_name,
+        systems=selected_systems,
+        models=selected_models,
+        corpora=corpus_selections,
+        output_dir=output_dir,
+        num_ctx=int(num_ctx),
+        reasoning_enabled=reasoning_enabled,
+        no_trace=no_trace,
+    )
+    if loaded_config:
+        config.suite_id = loaded_config.suite_id
+
+    config_path, state_path, launcher_log_path = _suite_paths(suite_dir, config)
+    run_args = _build_suite_run_args(str(config_path), str(state_path))
+    cancel_args = _build_suite_cancel_args(str(state_path))
+
+    st.markdown("### Generated task commands")
+    try:
+        preview = _suite_task_preview(config)
+        st.dataframe(preview, width="stretch", hide_index=True)
+        st.caption(f"{len(preview)} task command(s) generated.")
+    except Exception as exc:
+        preview = pd.DataFrame()
+        st.error(f"Could not build suite preview: {exc}")
+
+    st.markdown("### Suite control")
+    st.code(_shell_command(run_args), language="bash")
+    cols = st.columns(4)
+    if cols[0].button("Save config", width="stretch", disabled=preview.empty):
+        save_suite_config(config_path, config)
+        st.success(f"Saved {config_path}")
+    if cols[1].button("Run / resume suite", type="primary", width="stretch", disabled=preview.empty):
+        save_suite_config(config_path, config)
+        pid = _start_background_subprocess(run_args, launcher_log_path)
+        st.success(f"Started suite process pid={pid}.")
+        st.rerun()
+    if cols[2].button("Cancel suite", width="stretch", disabled=not state_path.exists()):
+        result = subprocess.run(cancel_args, capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            st.warning("Cancellation requested.")
+        else:
+            st.error(result.stderr or result.stdout or f"Cancel failed with {result.returncode}")
+    if cols[3].button("Refresh suite status", width="stretch"):
+        st.rerun()
+
+    st.caption(f"Config: `{config_path}`")
+    st.caption(f"State: `{state_path}`")
+    _render_suite_progress(state_path, df, analyses, runs)
+
+    if launcher_log_path.exists():
+        with st.expander("Suite launcher output", expanded=False):
+            st.code(launcher_log_path.read_text(encoding="utf-8")[-8000:], language="text")
 
 
 def _tab_run_experiment(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
@@ -782,6 +1280,47 @@ def _tab_actions(cfg: dict, filtered: pd.DataFrame) -> None:
         if rc == 0:
             st.cache_data.clear()
 
+    st.markdown("### Analyze experiment suites")
+    suite_states = _suite_state_paths(cfg["suite_dir"])
+    if not suite_states:
+        st.info("No suite state files found yet.")
+    else:
+        selected_states = st.multiselect(
+            "Suite states",
+            suite_states,
+            default=suite_states[:1],
+            format_func=lambda p: p.name,
+        )
+        default_analysis_name = f"{cfg['examiner_model'].replace(':', '-')}-suite-analysis"
+        analysis_name = st.text_input("Analysis run name", value=default_analysis_name)
+        suite_resume = st.checkbox("Resume suite analysis (skip cached)", value=True)
+        result_files = _result_files_from_suite_states(selected_states)
+        st.caption(f"{len(result_files)} result file(s) found across selected suite state(s).")
+
+        if st.button(
+            "▶ Analyze selected suites",
+            type="primary",
+            width="stretch",
+            disabled=not result_files or not analysis_name.strip(),
+        ):
+            output_dir = cfg["analysis_dir"] / suite_slug(analysis_name)
+            args = _cli_path() + [
+                "analyze",
+                "--experiment-results-dir", str(cfg["experiment_dir"]),
+                "--output-dir", str(output_dir),
+                "--path-to-corpora", cfg["corpora_root"],
+                "--examiner-model", cfg["examiner_model"],
+                "--num-ctx", str(cfg["num_ctx"]),
+                "--input-files",
+                *result_files,
+            ]
+            if not suite_resume:
+                args.append("--no-resume")
+            rc = _run_subprocess(args, "Running suite analysis")
+            if rc == 0:
+                st.cache_data.clear()
+                st.success(f"Analysis written to {output_dir}/")
+
     st.markdown("### Visualize")
     cols = st.columns([3, 1])
     output_dir = cols[0].text_input("Output directory", value="./data/figures")
@@ -834,6 +1373,7 @@ def main() -> None:
     analyses = data["analyses"]
 
     (
+        suite_tab,
         run_tab,
         overview_tab,
         runs_tab,
@@ -841,8 +1381,11 @@ def main() -> None:
         details_tab,
         actions_tab,
     ) = st.tabs(
-        ["Run experiment", "Overview", "Runs", "Charts", "Run details", "Actions"]
+        ["Experiment suite", "Run experiment", "Overview", "Runs", "Charts", "Run details", "Actions"]
     )
+
+    with suite_tab:
+        _tab_experiment_suite(cfg, df, analyses, runs)
 
     with run_tab:
         _tab_run_experiment(cfg, df, analyses, runs)
