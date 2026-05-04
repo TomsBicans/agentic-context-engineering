@@ -7,6 +7,8 @@ import sys
 import pandas as pd
 import pytest
 
+from experiment_runner.models.enums import Corpus, SystemName
+from experiment_runner.models.suite import ExperimentSuiteConfig, ExperimentSuiteState, SuiteCorpusSelection, SuiteTask
 from result_processor import main as result_main
 from result_processor.commands.analyze import run_analyze
 from result_processor.commands.dashboard import run_dashboard
@@ -85,6 +87,96 @@ def test_build_experiment_run_args_includes_selected_options(monkeypatch) -> Non
         "--no-trace",
         "--dry-run",
     ]
+
+
+def test_build_suite_run_and_cancel_args(monkeypatch) -> None:
+    monkeypatch.setattr(ui.sys, "executable", "/usr/bin/python")
+
+    assert ui._build_suite_run_args("suite.json", "suite.state.json") == [
+        "/usr/bin/python",
+        "-m",
+        "experiment_runner.main",
+        "suite",
+        "run",
+        "--config",
+        "suite.json",
+        "--state",
+        "suite.state.json",
+    ]
+    assert ui._build_suite_cancel_args("suite.state.json") == [
+        "/usr/bin/python",
+        "-m",
+        "experiment_runner.main",
+        "suite",
+        "cancel",
+        "--state",
+        "suite.state.json",
+    ]
+
+
+def test_suite_paths_use_slug_and_default_state_name(tmp_path) -> None:
+    config = ExperimentSuiteConfig(
+        name="Thesis Smoke Suite",
+        systems=[SystemName.ACE],
+        models=["qwen3:4b"],
+        corpora=[
+            SuiteCorpusSelection(
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="questions.json",
+                path_to_corpora="corpora",
+            )
+        ],
+    )
+
+    config_path, state_path, launcher_log_path = ui._suite_paths(tmp_path, config)
+
+    assert config_path == tmp_path / "thesis-smoke-suite.json"
+    assert state_path == tmp_path / "thesis-smoke-suite.state.json"
+    assert launcher_log_path == tmp_path / "thesis-smoke-suite.state.launcher.log"
+
+
+def test_result_files_from_suite_states_returns_existing_result_paths(tmp_path) -> None:
+    existing = tmp_path / "result.jsonl"
+    existing.write_text("{}\n", encoding="utf-8")
+    missing = tmp_path / "missing.jsonl"
+    state = ExperimentSuiteState(
+        suite_id="suite-1",
+        suite_name="suite",
+        tasks=[
+            SuiteTask(
+                task_id="t1",
+                index=1,
+                system=SystemName.ACE,
+                model="qwen3:4b",
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="questions.json",
+                path_to_corpora="corpora",
+                question_id="ss_L1_001",
+                question_text="Question?",
+                level=1,
+                command=["python"],
+                result_path=str(existing),
+            ),
+            SuiteTask(
+                task_id="t2",
+                index=2,
+                system=SystemName.CLAWCODE,
+                model="qwen3:4b",
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="questions.json",
+                path_to_corpora="corpora",
+                question_id="ss_L1_001",
+                question_text="Question?",
+                level=1,
+                command=["python"],
+                result_path=str(missing),
+            ),
+        ],
+    )
+    state_path = tmp_path / "suite.state.json"
+    state_path.write_text(state.model_dump_json(), encoding="utf-8")
+
+    assert ui._result_files_from_suite_states([state_path]) == [str(existing.resolve())]
 
 
 def test_shell_command_quotes_arguments() -> None:
