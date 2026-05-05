@@ -120,6 +120,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     _add_dashboard_args(dashboard)
 
+    analysis_job = subparsers.add_parser(
+        "analysis-job",
+        help="Run, inspect, and cancel persisted analysis jobs",
+    )
+    analysis_job_subparsers = analysis_job.add_subparsers(dest="analysis_job_command", required=True)
+    analysis_job_run = analysis_job_subparsers.add_parser("run", help="Execute or resume an analysis job")
+    analysis_job_run.add_argument("--state", required=True)
+    analysis_job_status = analysis_job_subparsers.add_parser("status", help="Print analysis job progress")
+    analysis_job_status.add_argument("--state", required=True)
+    analysis_job_cancel = analysis_job_subparsers.add_parser("cancel", help="Request cooperative cancellation")
+    analysis_job_cancel.add_argument("--state", required=True)
+
     return parser.parse_args(argv)
 
 
@@ -136,6 +148,18 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command == "dashboard":
             from result_processor.commands.dashboard import run_dashboard
             run_dashboard(args)
+        elif args.command == "analysis-job":
+            from result_processor.commands.analysis_job import (
+                run_analysis_job_cancel,
+                run_analysis_job_run,
+                run_analysis_job_status,
+            )
+            if args.analysis_job_command == "run":
+                run_analysis_job_run(args)
+            elif args.analysis_job_command == "status":
+                run_analysis_job_status(args)
+            elif args.analysis_job_command == "cancel":
+                run_analysis_job_cancel(args)
     except (ValueError, OSError) as exc:
         sys.stderr.write(f"error: {exc}\n")
         raise SystemExit(1) from exc

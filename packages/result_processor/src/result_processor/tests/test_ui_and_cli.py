@@ -115,6 +115,29 @@ def test_build_suite_run_and_cancel_args(monkeypatch) -> None:
     ]
 
 
+def test_build_analysis_job_run_and_cancel_args(monkeypatch) -> None:
+    monkeypatch.setattr(ui.sys, "executable", "/usr/bin/python")
+
+    assert ui._build_analysis_job_run_args("analysis.state.json") == [
+        "/usr/bin/python",
+        "-m",
+        "result_processor.main",
+        "analysis-job",
+        "run",
+        "--state",
+        "analysis.state.json",
+    ]
+    assert ui._build_analysis_job_cancel_args("analysis.state.json") == [
+        "/usr/bin/python",
+        "-m",
+        "result_processor.main",
+        "analysis-job",
+        "cancel",
+        "--state",
+        "analysis.state.json",
+    ]
+
+
 def test_suite_paths_use_slug_and_default_state_name(tmp_path) -> None:
     config = ExperimentSuiteConfig(
         name="Thesis Smoke Suite",
@@ -134,6 +157,39 @@ def test_suite_paths_use_slug_and_default_state_name(tmp_path) -> None:
     assert config_path == tmp_path / "thesis-smoke-suite.json"
     assert state_path == tmp_path / "thesis-smoke-suite.state.json"
     assert launcher_log_path == tmp_path / "thesis-smoke-suite.state.launcher.log"
+
+
+def test_analysis_job_paths_use_named_analysis_directory(tmp_path) -> None:
+    output_dir, state_path, log_path = ui._analysis_job_paths(tmp_path, "Qwen3 Suite Analysis")
+
+    assert output_dir == tmp_path / "qwen3-suite-analysis"
+    assert state_path == tmp_path / "qwen3-suite-analysis.state.json"
+    assert log_path == tmp_path / "qwen3-suite-analysis.log"
+
+
+def test_analysis_result_dirs_only_include_dirs_with_jsonl(tmp_path) -> None:
+    (tmp_path / "empty").mkdir()
+    (tmp_path / "with-results").mkdir()
+    (tmp_path / "with-results" / "run.jsonl").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "top-level.jsonl").write_text("{}\n", encoding="utf-8")
+
+    assert ui._analysis_result_dirs(tmp_path) == [tmp_path / "with-results"]
+    assert ui._analysis_result_dirs(tmp_path / "missing") == []
+
+
+def test_result_files_for_analysis_dir_matches_by_jsonl_name(tmp_path) -> None:
+    analysis_dir = tmp_path / "analysis" / "suite-analysis"
+    experiment_dir = tmp_path / "experiment"
+    analysis_dir.mkdir(parents=True)
+    experiment_dir.mkdir()
+    (analysis_dir / "matched.jsonl").write_text("{}\n", encoding="utf-8")
+    (analysis_dir / "missing.jsonl").write_text("{}\n", encoding="utf-8")
+    (experiment_dir / "matched.jsonl").write_text("{}\n", encoding="utf-8")
+
+    matched, missing = ui._result_files_for_analysis_dir(analysis_dir, experiment_dir)
+
+    assert matched == [experiment_dir / "matched.jsonl"]
+    assert missing == [experiment_dir / "missing.jsonl"]
 
 
 def test_suggest_suite_name_uses_selected_dimensions() -> None:
@@ -261,12 +317,16 @@ def test_parse_args_for_analyze_and_visualize() -> None:
         ["analyze", "--path-to-corpora", "corpora", "--input-files", "one.jsonl", "two.jsonl", "--no-resume"]
     )
     visualize = result_main.parse_args(["visualize", "--formats", "html", "svg"])
+    job = result_main.parse_args(["analysis-job", "run", "--state", "analysis.state.json"])
 
     assert analyze.command == "analyze"
     assert analyze.input_files == ["one.jsonl", "two.jsonl"]
     assert analyze.resume is False
     assert visualize.command == "visualize"
     assert visualize.formats == ["html", "svg"]
+    assert job.command == "analysis-job"
+    assert job.analysis_job_command == "run"
+    assert job.state == "analysis.state.json"
 
 
 def test_command_wrappers_delegate_to_pipelines(monkeypatch) -> None:

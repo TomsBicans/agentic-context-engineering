@@ -34,8 +34,16 @@ from experiment_runner.models.suite import (
     suite_slug,
 )
 from experiment_runner.runners.registry import DISABLED_SYSTEMS, SYSTEM_AUTOMATION_LEVELS
+from result_processor.commands.analysis_job import (
+    build_analysis_job_state,
+    load_analysis_job_state,
+    save_analysis_job_state,
+    summarize_analysis_job_state,
+)
+from result_processor.models.analysis_job import AnalysisTaskStatus
 from result_processor.visualization.loader import (
     build_dataframe,
+    build_dataframe_for_files,
     load_analyses,
     load_runs,
 )
@@ -186,6 +194,14 @@ def _build_suite_cancel_args(state_path: str) -> list[str]:
         "--state",
         state_path,
     ]
+
+
+def _build_analysis_job_run_args(state_path: str) -> list[str]:
+    return _cli_path() + ["analysis-job", "run", "--state", state_path]
+
+
+def _build_analysis_job_cancel_args(state_path: str) -> list[str]:
+    return _cli_path() + ["analysis-job", "cancel", "--state", state_path]
 
 
 def _shell_command(args: list[str]) -> str:
@@ -719,6 +735,204 @@ def _result_files_from_suite_states(state_paths: list[Path]) -> list[str]:
     return sorted(paths)
 
 
+def _analysis_job_paths(analysis_root: Path, analysis_name: str) -> tuple[Path, Path, Path]:
+    slug = suite_slug(analysis_name)
+    output_dir = analysis_root / slug
+    state_path = analysis_root / f"{slug}.state.json"
+    log_path = analysis_root / f"{slug}.log"
+    return output_dir, state_path, log_path
+
+
+def _analysis_result_dirs(analysis_root: Path) -> list[Path]:
+    if not analysis_root.exists():
+        return []
+    return sorted(
+        path
+        for path in analysis_root.iterdir()
+        if path.is_dir() and any(path.glob("*.jsonl"))
+    )
+
+
+def _result_files_for_analysis_dir(analysis_dir: Path, experiment_dir: Path) -> tuple[list[Path], list[Path]]:
+    result_files: list[Path] = []
+    missing_files: list[Path] = []
+    for analysis_file in sorted(analysis_dir.glob("*.jsonl")):
+        result_file = experiment_dir / analysis_file.name
+        if result_file.is_file():
+            result_files.append(result_file)
+        else:
+            missing_files.append(result_file)
+    return result_files, missing_files
+
+
+def _analysis_job_state_dataframe(state_path: Path) -> tuple[dict, pd.DataFrame]:
+    if not state_path.is_file():
+        return {}, pd.DataFrame()
+    state = load_analysis_job_state(state_path)
+    summary = summarize_analysis_job_state(state)
+    rows = [
+        {
+            "run_id": task.run_id,
+            "status": task.status.value,
+            "source_file": task.source_file,
+            "output_file": task.output_file,
+            "error": task.error,
+        }
+        for task in state.tasks
+    ]
+    return summary, pd.DataFrame(rows)
+
+
+def _render_analysis_job_progress(
+    state_path: Path,
+    result_files: list[str],
+    analysis_output_dir: Path,
+    analyses,
+    runs,
+) -> pd.DataFrame:
+    summary, tasks_df = _analysis_job_state_dataframe(state_path)
+    if not summary:
+        st.info("No persisted analysis job state yet.")
+        return pd.DataFrame()
+
+    total = int(summary["total"])
+    completed = int(summary["completed"])
+    st.progress(completed / total if total else 0.0, text=f"{completed}/{total} run(s) completed")
+
+    cols = st.columns(6)
+    cols[0].metric("Total", total)
+    cols[1].metric("Analyzed", summary[AnalysisTaskStatus.ANALYZED.value])
+    cols[2].metric("Skipped", summary[AnalysisTaskStatus.SKIPPED.value])
+    cols[3].metric("Failed", summary[AnalysisTaskStatus.FAILED.value])
+    cols[4].metric("Running", summary[AnalysisTaskStatus.RUNNING.value])
+    cols[5].metric("Pending", summary[AnalysisTaskStatus.PENDING.value])
+
+    if summary["cancel_requested"]:
+        st.warning("Cancellation has been requested. The analysis job stops before starting the next run.")
+
+    selected_df = build_dataframe_for_files([Path(p) for p in result_files], analysis_output_dir) if result_files else pd.DataFrame()
+    if not tasks_df.empty:
+        event = st.dataframe(
+            tasks_df,
+            width="stretch",
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="analysis_job_tasks_table",
+        )
+        selected_rows = event.selection.rows if event.selection else []
+        if selected_rows:
+            run_id = tasks_df.iloc[selected_rows[0]]["run_id"]
+            detail_df = selected_df if not selected_df.empty else df_from_runs_by_id(runs, run_id)
+            if not detail_df.empty and run_id in set(detail_df["run_id"]):
+                st.divider()
+                _render_run_details(detail_df, load_analyses(analysis_output_dir), runs, run_id)
+            else:
+                st.info("Selected run details are not available yet.")
+    return selected_df
+
+
+def _render_existing_analysis_results(cfg: dict, runs) -> None:
+    st.markdown("### Existing analysis results")
+    analysis_dirs = _analysis_result_dirs(cfg["analysis_dir"])
+    if not analysis_dirs:
+        st.info("No existing analysis result directories found.")
+        return
+
+    selected_dir = st.selectbox(
+        "Analysis result directory",
+        analysis_dirs,
+        format_func=lambda p: p.name,
+        key="existing_analysis_result_dir",
+    )
+    if selected_dir is None:
+        return
+
+    result_files, missing_files = _result_files_for_analysis_dir(selected_dir, cfg["experiment_dir"])
+    analysis_files = sorted(selected_dir.glob("*.jsonl"))
+    st.caption(f"Selected analysis output: `{selected_dir}`")
+    cols = st.columns(3)
+    cols[0].metric("Analysis files", len(analysis_files))
+    cols[1].metric("Matched result files", len(result_files))
+    cols[2].metric("Missing result files", len(missing_files))
+
+    if missing_files:
+        with st.expander("Missing experiment result files", expanded=False):
+            st.code("\n".join(str(path) for path in missing_files), language="text")
+    if not result_files:
+        st.warning("No matching experiment result files were found for this analysis directory.")
+        return
+
+    analysis_df = build_dataframe_for_files(result_files, selected_dir)
+    analyses_for_dir = load_analyses(selected_dir)
+    analyzed_count = int(analysis_df["support_rate"].notna().sum()) if "support_rate" in analysis_df else 0
+    mean_support = analysis_df["support_rate"].dropna().mean() if "support_rate" in analysis_df else None
+
+    cols = st.columns(4)
+    cols[0].metric("Runs", len(analysis_df))
+    cols[1].metric("Analyzed", analyzed_count)
+    cols[2].metric("Systems", analysis_df["system_name"].nunique() if "system_name" in analysis_df else 0)
+    cols[3].metric(
+        "Mean support",
+        f"{mean_support:.2f}" if mean_support is not None and not pd.isna(mean_support) else "—",
+    )
+
+    table_cols = [
+        col
+        for col in [
+            "run_date",
+            "system_name",
+            "corpus",
+            "level",
+            "question_id",
+            "model",
+            "verdict",
+            "support_rate",
+            "helpfulness_rating",
+            "execution_time_s",
+            "tool_call_count",
+            "run_id",
+        ]
+        if col in analysis_df.columns
+    ]
+    event = st.dataframe(
+        analysis_df[table_cols],
+        width="stretch",
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="existing_analysis_results_table",
+    )
+    selected_rows = event.selection.rows if event.selection else []
+    if selected_rows:
+        run_id = analysis_df.iloc[selected_rows[0]]["run_id"]
+        st.divider()
+        _render_run_details(analysis_df, analyses_for_dir, runs, run_id)
+
+    _render_inline_analysis_charts(analysis_df, key="existing_analysis_inline_charts")
+
+
+def df_from_runs_by_id(runs, run_id: str) -> pd.DataFrame:
+    run = next((r for r in runs if r.run_id == run_id), None)
+    return _dataframe_for_single_run(run) if run else pd.DataFrame()
+
+
+def _render_inline_analysis_charts(analysis_df: pd.DataFrame, key: str = "analysis_inline_charts") -> None:
+    st.markdown("### Analysis charts")
+    if analysis_df.empty or analysis_df.get("support_rate", pd.Series(dtype=float)).dropna().empty:
+        st.info("No analyzed metrics available for charts yet.")
+        return
+    names = list(ALL_PLOTS.keys())
+    selected = st.multiselect(
+        "Charts",
+        names,
+        default=names[:4],
+        key=key,
+    )
+    for name in selected:
+        st.plotly_chart(ALL_PLOTS[name](analysis_df), width="stretch")
+
+
 def _run_id_from_result_path(result_path: str | None) -> str | None:
     run = _run_from_result_path(result_path)
     return run.run_id if run else None
@@ -1250,7 +1464,7 @@ def _render_run_experiment_form(cfg: dict) -> None:
         _render_run_errors(st.session_state["_last_result_path"])
 
 
-def _tab_actions(cfg: dict, filtered: pd.DataFrame) -> None:
+def _tab_actions(cfg: dict, filtered: pd.DataFrame, analyses, runs) -> None:
     st.subheader("Actions")
     st.caption("Both actions shell out to the `result-processor` CLI so behaviour matches Makefile/terminal usage.")
 
@@ -1296,30 +1510,62 @@ def _tab_actions(cfg: dict, filtered: pd.DataFrame) -> None:
         suite_resume = st.checkbox("Resume suite analysis (skip cached)", value=True)
         result_files = _result_files_from_suite_states(selected_states)
         st.caption(f"{len(result_files)} result file(s) found across selected suite state(s).")
+        analysis_output_dir, analysis_state_path, analysis_log_path = _analysis_job_paths(
+            cfg["analysis_dir"],
+            analysis_name,
+        )
+        run_args = _build_analysis_job_run_args(str(analysis_state_path))
+        cancel_args = _build_analysis_job_cancel_args(str(analysis_state_path))
+        st.code(_shell_command(run_args), language="bash")
 
         if st.button(
-            "▶ Analyze selected suites",
+            "▶ Run / resume suite analysis",
             type="primary",
             width="stretch",
             disabled=not result_files or not analysis_name.strip(),
         ):
-            output_dir = cfg["analysis_dir"] / suite_slug(analysis_name)
-            args = _cli_path() + [
-                "analyze",
-                "--experiment-results-dir", str(cfg["experiment_dir"]),
-                "--output-dir", str(output_dir),
-                "--path-to-corpora", cfg["corpora_root"],
-                "--examiner-model", cfg["examiner_model"],
-                "--num-ctx", str(cfg["num_ctx"]),
-                "--input-files",
-                *result_files,
-            ]
-            if not suite_resume:
-                args.append("--no-resume")
-            rc = _run_subprocess(args, "Running suite analysis")
-            if rc == 0:
-                st.cache_data.clear()
-                st.success(f"Analysis written to {output_dir}/")
+            state = build_analysis_job_state(
+                job_name=analysis_name,
+                experiment_results_dir=str(cfg["experiment_dir"]),
+                output_dir=str(analysis_output_dir),
+                path_to_corpora=cfg["corpora_root"],
+                examiner_model=cfg["examiner_model"],
+                num_ctx=cfg["num_ctx"],
+                input_files=result_files,
+                resume=suite_resume,
+                log_path=str(analysis_log_path),
+            )
+            save_analysis_job_state(analysis_state_path, state)
+            pid = _start_background_subprocess(run_args, analysis_log_path)
+            st.success(f"Started analysis job pid={pid}.")
+            st.rerun()
+
+        cols = st.columns(2)
+        if cols[0].button("Cancel suite analysis", width="stretch", disabled=not analysis_state_path.exists()):
+            result = subprocess.run(cancel_args, capture_output=True, text=True, check=False)
+            if result.returncode == 0:
+                st.warning("Analysis cancellation requested.")
+            else:
+                st.error(result.stderr or result.stdout or f"Cancel failed with {result.returncode}")
+        if cols[1].button("Refresh analysis status", width="stretch"):
+            st.cache_data.clear()
+            st.rerun()
+
+        st.caption(f"Analysis output: `{analysis_output_dir}`")
+        st.caption(f"Analysis state: `{analysis_state_path}`")
+        analysis_df = _render_analysis_job_progress(
+            analysis_state_path,
+            result_files,
+            analysis_output_dir,
+            analyses,
+            runs,
+        )
+        _render_inline_analysis_charts(analysis_df)
+        if analysis_log_path.exists():
+            with st.expander("Analysis job output", expanded=False):
+                st.code(analysis_log_path.read_text(encoding="utf-8")[-8000:], language="text")
+
+    _render_existing_analysis_results(cfg, runs)
 
     st.markdown("### Visualize")
     cols = st.columns([3, 1])
@@ -1403,7 +1649,7 @@ def main() -> None:
         _tab_run_details(df, analyses, runs)
 
     with actions_tab:
-        _tab_actions(cfg, filtered)
+        _tab_actions(cfg, filtered, analyses, runs)
 
 
 if __name__ == "__main__" or __name__ == "__page__":

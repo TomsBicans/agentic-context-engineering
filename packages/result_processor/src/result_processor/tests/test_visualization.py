@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from result_processor.tests.conftest import analysis_result, run_payload, write_jsonl
-from result_processor.visualization.loader import build_dataframe, load_analyses, load_runs
+from result_processor.visualization.loader import build_dataframe, build_dataframe_for_files, load_analyses, load_runs
 from result_processor.visualization.pipeline import visualize_results
 from result_processor.visualization.plots import ALL_PLOTS
 from result_processor.visualization.tables import ALL_TABLES
@@ -38,6 +38,15 @@ def test_loader_joins_runs_and_analyses_with_dates_and_levels(tmp_path) -> None:
     assert str(df.loc[df["run_id"] == "r1", "run_date"].iloc[0]).endswith("UTC")
     assert df.loc[df["run_id"] == "r1", "support_rate"].iloc[0] == 1.0
     assert pd.isna(df.loc[df["run_id"] == "r2", "support_rate"].iloc[0])
+
+
+def test_loader_builds_dataframe_for_selected_result_files(tmp_path) -> None:
+    experiment_dir, analysis_dir = _write_result_files(tmp_path)
+
+    df = build_dataframe_for_files([experiment_dir / "runs.jsonl"], analysis_dir)
+
+    assert df["run_id"].tolist() == ["r1", "r2"]
+    assert df.loc[df["run_id"] == "r1", "support_rate"].iloc[0] == 1.0
 
 
 def test_plot_builders_return_figures_for_populated_and_empty_inputs(tmp_path) -> None:

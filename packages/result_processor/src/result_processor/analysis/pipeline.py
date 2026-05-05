@@ -7,7 +7,7 @@ default — runs already present in the output are skipped.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from experiment_runner.models.result import RunResult
 from rich.console import Console
@@ -44,6 +44,9 @@ def analyze_directory(
     num_ctx: int = 8192,
     input_files: Optional[Iterable[str]] = None,
     resume: bool = True,
+    progress_callback: Optional[Callable[[str, RunResult, Path, Optional[str]], None]] = None,
+    should_cancel: Optional[Callable[[], bool]] = None,
+    continue_on_error: bool = False,
 ) -> None:
     console = Console()
 
@@ -78,7 +81,11 @@ def analyze_directory(
 
         runs = list(iter_run_results(target))
         pending = [r for r in runs if r.run_id not in already_done]
+        skipped_runs = [r for r in runs if r.run_id in already_done]
         skipped = len(runs) - len(pending)
+        for run in skipped_runs:
+            if progress_callback:
+                progress_callback("skipped", run, target, None)
 
         console.print(
             f"  → {target.name}: {len(pending)} to analyze, {skipped} cached"
@@ -87,8 +94,22 @@ def analyze_directory(
             continue
 
         for run in tqdm(pending, desc=target.name, unit="run", leave=False):
-            analysis = _analyze_one(run, resolver, examiner, examiner_model)
-            append_analysis(out_path, analysis)
+            if should_cancel and should_cancel():
+                console.print("[yellow]Analysis cancelled.[/yellow]")
+                return
+            if progress_callback:
+                progress_callback("running", run, target, None)
+            try:
+                analysis = _analyze_one(run, resolver, examiner, examiner_model)
+                append_analysis(out_path, analysis)
+            except Exception as exc:
+                if progress_callback:
+                    progress_callback("failed", run, target, str(exc))
+                if continue_on_error:
+                    continue
+                raise
+            if progress_callback:
+                progress_callback("analyzed", run, target, None)
 
     console.print("[bold green]Analysis complete.[/bold green]")
 
