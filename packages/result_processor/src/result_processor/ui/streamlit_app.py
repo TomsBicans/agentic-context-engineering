@@ -1888,6 +1888,12 @@ def _tab_actions(cfg: dict, filtered: pd.DataFrame, analyses, runs) -> None:
                 cfg["analysis_dir"],
                 analysis_name,
             )
+            analysis_name_exists = analysis_output_dir.exists()
+            if analysis_name_exists:
+                st.warning(
+                    "This analysis run name already exists in the result archive. "
+                    "Choose a unique name before running analysis to avoid mixing new results with archived data."
+                )
             run_args = _build_analysis_job_run_args(str(analysis_state_path))
             cancel_args = _build_analysis_job_cancel_args(str(analysis_state_path))
             st.code(_shell_command(run_args), language="bash")
@@ -1896,7 +1902,7 @@ def _tab_actions(cfg: dict, filtered: pd.DataFrame, analyses, runs) -> None:
                     "▶ Run / resume suite analysis",
                     type="primary",
                     width="stretch",
-                    disabled=not result_files or not analysis_name.strip(),
+                    disabled=not result_files or not analysis_name.strip() or analysis_name_exists,
             ):
                 state = build_analysis_job_state(
                     job_name=analysis_name,
