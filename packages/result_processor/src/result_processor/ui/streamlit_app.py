@@ -1231,7 +1231,7 @@ def _render_inline_analysis_charts(analysis_df: pd.DataFrame, key: str = "analys
     selected = st.multiselect(
         "Charts",
         names,
-        default=names[:4],
+        default=[],
         key=key,
     )
     for name in selected:
