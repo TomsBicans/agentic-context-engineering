@@ -33,6 +33,10 @@ class AnalysisJobState(BaseModel):
     output_dir: str
     path_to_corpora: str
     examiner_model: str
+    suite_id: Optional[str] = None
+    suite_name: Optional[str] = None
+    suite_config_path: Optional[str] = None
+    suite_state_path: Optional[str] = None
     num_ctx: int = 8192
     input_files: list[str] = Field(default_factory=list)
     resume: bool = True

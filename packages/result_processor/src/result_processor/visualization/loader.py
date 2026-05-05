@@ -114,6 +114,10 @@ def build_dataframe(
             "verdict": analysis.verdict.value if analysis else None,
             "helpfulness_rating": analysis.helpfulness_rating if analysis else None,
             "examiner_model": analysis.examiner_model if analysis else None,
+            "analysis_run_name": analysis.analysis_run_name if analysis else None,
+            "suite_id": analysis.suite_id if analysis else None,
+            "suite_name": analysis.suite_name if analysis else None,
+            "suite_state_path": analysis.suite_state_path if analysis else None,
         }
         records.append(record)
 
@@ -165,6 +169,10 @@ def build_dataframe_for_files(
             "verdict": analysis.verdict.value if analysis else None,
             "helpfulness_rating": analysis.helpfulness_rating if analysis else None,
             "examiner_model": analysis.examiner_model if analysis else None,
+            "analysis_run_name": analysis.analysis_run_name if analysis else None,
+            "suite_id": analysis.suite_id if analysis else None,
+            "suite_name": analysis.suite_name if analysis else None,
+            "suite_state_path": analysis.suite_state_path if analysis else None,
         })
 
     return pd.DataFrame.from_records(records)

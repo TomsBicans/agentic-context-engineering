@@ -14,7 +14,7 @@ from result_processor import main as result_main
 from result_processor.commands.analyze import run_analyze
 from result_processor.commands.dashboard import run_dashboard
 from result_processor.commands.visualize import run_visualize
-from result_processor.tests.conftest import run_payload, write_jsonl
+from result_processor.tests.conftest import analysis_result, run_payload, write_jsonl
 from result_processor.ui import streamlit_app as ui
 
 
@@ -320,6 +320,85 @@ def test_result_files_from_suite_states_returns_existing_result_paths(tmp_path) 
     state_path.write_text(state.model_dump_json(), encoding="utf-8")
 
     assert ui._result_files_from_suite_states([state_path]) == [str(existing.resolve())]
+
+
+def test_analysis_run_records_link_legacy_directory_by_suite_result_names(tmp_path) -> None:
+    result_path = tmp_path / "experiment" / "run.jsonl"
+    write_jsonl(result_path, [run_payload(run_id="r1")])
+    analysis_dir = tmp_path / "analysis" / "legacy-analysis"
+    write_jsonl(analysis_dir / "run.jsonl", [analysis_result(run_id="r1")])
+
+    state = ExperimentSuiteState(
+        suite_id="suite-1",
+        suite_name="suite",
+        config_path=str(tmp_path / "suite.json"),
+        tasks=[
+            SuiteTask(
+                task_id="t1",
+                index=1,
+                system=SystemName.ACE,
+                model="qwen3:4b",
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="questions.json",
+                path_to_corpora="corpora",
+                question_id="ss_L1_001",
+                question_text="Question?",
+                level=1,
+                command=["python"],
+                result_path=str(result_path),
+            )
+        ],
+    )
+    suite_dir = tmp_path / "suites"
+    suite_dir.mkdir()
+    state_path = suite_dir / "suite.state.json"
+    state_path.write_text(state.model_dump_json(), encoding="utf-8")
+    suite_records = ui._suite_records(suite_dir)
+
+    records = ui._analysis_run_records(tmp_path / "analysis", suite_records, tmp_path / "experiment")
+
+    assert len(records) == 1
+    assert records[0]["suite_key"] == str(state_path.resolve())
+    assert records[0]["suite_name"] == "suite"
+    assert records[0]["result_files"] == [result_path]
+
+
+def test_create_analysis_export_zip_includes_suite_analysis_and_charts(tmp_path) -> None:
+    result_path = tmp_path / "experiment" / "run.jsonl"
+    write_jsonl(result_path, [run_payload(run_id="r1")])
+    analysis_dir = tmp_path / "analysis" / "analysis-a"
+    write_jsonl(analysis_dir / "run.jsonl", [analysis_result(run_id="r1")])
+    config_path = tmp_path / "suite.json"
+    state_path = tmp_path / "suite.state.json"
+    config_path.write_text("{}\n", encoding="utf-8")
+    state_path.write_text("{}\n", encoding="utf-8")
+    suite_record = {
+        "suite_id": "suite-1",
+        "suite_name": "suite",
+        "state_path": state_path,
+        "config_path": config_path,
+    }
+    analysis_record = {
+        "analysis_name": "analysis-a",
+        "analysis_dir": analysis_dir,
+        "analysis_files": [analysis_dir / "run.jsonl"],
+        "result_files": [result_path],
+        "metadata": {},
+    }
+    analysis_df = ui._combined_analysis_dataframe([analysis_record])
+
+    zip_bytes = ui._create_analysis_export_zip(suite_record, [analysis_record], analysis_df)
+
+    import zipfile
+    from io import BytesIO
+    with zipfile.ZipFile(BytesIO(zip_bytes)) as zf:
+        names = set(zf.namelist())
+    assert "manifest.json" in names
+    assert "suite/suite.json" in names
+    assert "suite/suite.state.json" in names
+    assert "tables/analysis_results.csv" in names
+    assert "experiment_data/analysis-a/run.jsonl" in names
+    assert "analysis_results/analysis-a/run.jsonl" in names
 
 
 def test_run_id_from_result_path_reads_first_valid_jsonl_row(tmp_path) -> None:

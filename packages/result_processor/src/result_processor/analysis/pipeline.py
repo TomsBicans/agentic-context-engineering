@@ -47,6 +47,11 @@ def analyze_directory(
     progress_callback: Optional[Callable[[str, RunResult, Path, Optional[str]], None]] = None,
     should_cancel: Optional[Callable[[], bool]] = None,
     continue_on_error: bool = False,
+    analysis_run_name: Optional[str] = None,
+    suite_id: Optional[str] = None,
+    suite_name: Optional[str] = None,
+    suite_config_path: Optional[str] = None,
+    suite_state_path: Optional[str] = None,
 ) -> None:
     console = Console()
 
@@ -100,7 +105,17 @@ def analyze_directory(
             if progress_callback:
                 progress_callback("running", run, target, None)
             try:
-                analysis = _analyze_one(run, resolver, examiner, examiner_model)
+                analysis = _analyze_one(
+                    run,
+                    resolver,
+                    examiner,
+                    examiner_model,
+                    analysis_run_name=analysis_run_name,
+                    suite_id=suite_id,
+                    suite_name=suite_name,
+                    suite_config_path=suite_config_path,
+                    suite_state_path=suite_state_path,
+                )
                 append_analysis(out_path, analysis)
             except Exception as exc:
                 if progress_callback:
@@ -119,6 +134,12 @@ def _analyze_one(
     resolver: ExcerptResolver,
     examiner: ExaminerLLM,
     examiner_model: str,
+    *,
+    analysis_run_name: Optional[str] = None,
+    suite_id: Optional[str] = None,
+    suite_name: Optional[str] = None,
+    suite_config_path: Optional[str] = None,
+    suite_state_path: Optional[str] = None,
 ) -> AnalysisResult:
     answer = run.answer_text or ""
 
@@ -155,7 +176,19 @@ def _analyze_one(
         )
 
     helpfulness, notes = _summarize(run, examiner, claim_analyses)
-    return _aggregate(run, claim_analyses, len(uncited_sentences), examiner_model, helpfulness, notes)
+    return _aggregate(
+        run,
+        claim_analyses,
+        len(uncited_sentences),
+        examiner_model,
+        helpfulness,
+        notes,
+        analysis_run_name=analysis_run_name,
+        suite_id=suite_id,
+        suite_name=suite_name,
+        suite_config_path=suite_config_path,
+        suite_state_path=suite_state_path,
+    )
 
 
 def _to_claim_analysis(
@@ -200,6 +233,12 @@ def _aggregate(
     examiner_model: str,
     helpfulness: Optional[int],
     notes: str,
+    *,
+    analysis_run_name: Optional[str] = None,
+    suite_id: Optional[str] = None,
+    suite_name: Optional[str] = None,
+    suite_config_path: Optional[str] = None,
+    suite_state_path: Optional[str] = None,
 ) -> AnalysisResult:
     total = len(claims)
     supported = sum(1 for c in claims if c.status == ClaimStatus.SUPPORTED)
@@ -224,6 +263,11 @@ def _aggregate(
     return AnalysisResult(
         run_id=run.run_id,
         examiner_model=examiner_model,
+        analysis_run_name=analysis_run_name,
+        suite_id=suite_id,
+        suite_name=suite_name,
+        suite_config_path=suite_config_path,
+        suite_state_path=suite_state_path,
         claims=claims,
         claims_total=total,
         claims_supported=supported,

@@ -27,6 +27,29 @@ def save_analysis_job_state(path: str | Path, state: AnalysisJobState) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     state.updated_at = datetime.now(timezone.utc)
     out.write_text(state.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    save_analysis_metadata(state, out)
+
+
+def save_analysis_metadata(state: AnalysisJobState, state_path: Path) -> None:
+    out_dir = Path(state.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    metadata = {
+        "analysis_name": state.job_name,
+        "analysis_state_path": str(state_path.resolve()),
+        "analysis_output_dir": str(out_dir.resolve()),
+        "experiment_results_dir": state.experiment_results_dir,
+        "path_to_corpora": state.path_to_corpora,
+        "examiner_model": state.examiner_model,
+        "num_ctx": state.num_ctx,
+        "input_files": state.input_files,
+        "suite_id": state.suite_id,
+        "suite_name": state.suite_name,
+        "suite_config_path": state.suite_config_path,
+        "suite_state_path": state.suite_state_path,
+        "created_at": state.created_at.isoformat(),
+        "updated_at": state.updated_at.isoformat(),
+    }
+    (out_dir / "analysis.meta.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
 
 
 def _output_file_for_run_file(output_dir: str | Path, source_file: str | Path) -> str:
@@ -48,6 +71,10 @@ def build_analysis_job_state(
     input_files: list[str],
     resume: bool,
     log_path: str | None = None,
+    suite_id: str | None = None,
+    suite_name: str | None = None,
+    suite_config_path: str | None = None,
+    suite_state_path: str | None = None,
 ) -> AnalysisJobState:
     tasks: list[AnalysisJobTask] = []
     for input_file in input_files:
@@ -70,6 +97,10 @@ def build_analysis_job_state(
         output_dir=output_dir,
         path_to_corpora=path_to_corpora,
         examiner_model=examiner_model,
+        suite_id=suite_id,
+        suite_name=suite_name,
+        suite_config_path=suite_config_path,
+        suite_state_path=suite_state_path,
         num_ctx=num_ctx,
         input_files=[str(Path(f).resolve()) for f in input_files],
         resume=resume,
@@ -93,6 +124,10 @@ def reconcile_analysis_job_state(state: AnalysisJobState) -> AnalysisJobState:
         input_files=state.input_files,
         resume=state.resume,
         log_path=state.log_path,
+        suite_id=state.suite_id,
+        suite_name=state.suite_name,
+        suite_config_path=state.suite_config_path,
+        suite_state_path=state.suite_state_path,
     )
     for task in rebuilt.tasks:
         old = previous.get(_task_key(task.source_file, task.run_id))
@@ -178,6 +213,11 @@ def run_analysis_job(state_path: str | Path) -> AnalysisJobState:
                 progress_callback=mark,
                 should_cancel=should_cancel,
                 continue_on_error=True,
+                analysis_run_name=state.job_name,
+                suite_id=state.suite_id,
+                suite_name=state.suite_name,
+                suite_config_path=state.suite_config_path,
+                suite_state_path=state.suite_state_path,
             )
         finally:
             sys.stdout = stdout
