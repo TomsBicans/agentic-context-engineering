@@ -209,6 +209,41 @@ def test_suggest_suite_name_uses_selected_dimensions() -> None:
     assert name == "solar-system-wiki-l2-qwen3-8b-ace-clawcode"
 
 
+def test_suite_widget_state_from_config_includes_per_corpus_selection_fields() -> None:
+    config = ExperimentSuiteConfig(
+        name="saved suite",
+        systems=[SystemName.ACE, SystemName.CLAWCODE],
+        models=["qwen3:4b"],
+        corpora=[
+            SuiteCorpusSelection(
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="./corpora/questions/solar_system.json",
+                path_to_corpora="./corpora/scraped_data/solar_system_wiki",
+                levels=[2],
+                question_ids=["ss_L2_005"],
+            )
+        ],
+        output_dir="./data/experiment_results",
+        num_ctx=16384,
+        reasoning_enabled=True,
+        no_trace=True,
+    )
+
+    state = ui._suite_widget_state_from_config(config, ["qwen3:4b"])
+
+    assert state["suite_name_input"] == "saved suite"
+    assert state["suite_systems"] == [SystemName.ACE, SystemName.CLAWCODE]
+    assert state["suite_models"] == ["qwen3:4b"]
+    assert state["suite_corpora"] == ["solar_system_wiki"]
+    assert state["suite_qf_solar_system_wiki"] == "./corpora/questions/solar_system.json"
+    assert state["suite_corpora_solar_system_wiki"] == "./corpora/scraped_data/solar_system_wiki"
+    assert state["suite_levels_solar_system_wiki"] == [2]
+    assert state["suite_ids_solar_system_wiki"] == ["ss_L2_005"]
+    assert state["suite_num_ctx"] == 16384
+    assert state["suite_reasoning_enabled"] is True
+    assert state["suite_no_trace"] is True
+
+
 def test_result_files_from_suite_states_returns_existing_result_paths(tmp_path) -> None:
     existing = tmp_path / "result.jsonl"
     existing.write_text("{}\n", encoding="utf-8")

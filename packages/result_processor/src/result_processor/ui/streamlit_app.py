@@ -1161,6 +1161,29 @@ def _suggest_suite_name(
     return suite_slug(raw_name)
 
 
+def _suite_widget_state_from_config(
+    config: ExperimentSuiteConfig,
+    model_options: list[str],
+) -> dict[str, object]:
+    state: dict[str, object] = {
+        "suite_name_input": config.name,
+        "suite_systems": [system for system in config.systems if system in _AUTOMATED_SYSTEMS],
+        "suite_models": [model for model in config.models if model in model_options] or [model_options[0]],
+        "suite_corpora": [selection.corpus.value for selection in config.corpora if selection.corpus.value in CORPUS_DEFAULTS],
+        "suite_num_ctx": config.num_ctx,
+        "suite_reasoning_enabled": config.reasoning_enabled,
+        "suite_no_trace": config.no_trace,
+        "suite_output_dir": config.output_dir,
+    }
+    for selection in config.corpora:
+        corpus = selection.corpus.value
+        state[f"suite_qf_{corpus}"] = selection.questions_file
+        state[f"suite_corpora_{corpus}"] = selection.path_to_corpora
+        state[f"suite_levels_{corpus}"] = list(selection.levels)
+        state[f"suite_ids_{corpus}"] = list(selection.question_ids)
+    return state
+
+
 def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
     st.subheader("Experiment suite")
     st.caption(
@@ -1193,54 +1216,59 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
         except Exception as exc:
             st.warning(f"Could not load suite config: {exc}")
 
+    model_options = _model_options()
+    if loaded_config and st.session_state.get("suite_loaded_config_for") != loaded_path:
+        for key, value in _suite_widget_state_from_config(loaded_config, model_options).items():
+            st.session_state[key] = value
+        st.session_state["suite_loaded_config_for"] = loaded_path
     if "suite_name_input" not in st.session_state:
-        st.session_state["suite_name_input"] = loaded_config.name if loaded_config else "thesis-smoke-suite"
-    if loaded_config and st.session_state.get("suite_loaded_name_for") != loaded_path:
-        st.session_state["suite_name_input"] = loaded_config.name
-        st.session_state["suite_loaded_name_for"] = loaded_path
+        st.session_state["suite_name_input"] = "thesis-smoke-suite"
     if "suite_name_pending" in st.session_state:
         st.session_state["suite_name_input"] = st.session_state.pop("suite_name_pending")
+    st.session_state.setdefault("suite_systems", [SystemName.ACE])
+    st.session_state.setdefault("suite_models", [DEFAULT_MODEL if DEFAULT_MODEL in model_options else model_options[0]])
+    st.session_state.setdefault("suite_corpora", ["solar_system_wiki"])
+    st.session_state.setdefault("suite_num_ctx", 8192)
+    st.session_state.setdefault("suite_reasoning_enabled", False)
+    st.session_state.setdefault("suite_no_trace", True)
+    st.session_state.setdefault("suite_output_dir", str(cfg["experiment_dir"]))
 
     suite_name_container = st.container()
 
-    default_systems = loaded_config.systems if loaded_config else [SystemName.ACE]
     selected_systems = st.multiselect(
         "systems",
         _AUTOMATED_SYSTEMS,
-        default=[s for s in default_systems if s in _AUTOMATED_SYSTEMS],
         format_func=_system_label,
+        key="suite_systems",
     )
 
-    model_options = _model_options()
-    default_models = loaded_config.models if loaded_config else [DEFAULT_MODEL]
     selected_models = st.multiselect(
         "models",
         model_options,
-        default=[m for m in default_models if m in model_options] or [model_options[0]],
+        key="suite_models",
     )
 
-    default_corpora = [c.corpus.value for c in loaded_config.corpora] if loaded_config else ["solar_system_wiki"]
     selected_corpora = st.multiselect(
         "corpora",
         list(CORPUS_DEFAULTS.keys()),
-        default=[c for c in default_corpora if c in CORPUS_DEFAULTS],
+        key="suite_corpora",
     )
 
-    loaded_by_corpus = {c.corpus.value: c for c in loaded_config.corpora} if loaded_config else {}
     corpus_selections: list[SuiteCorpusSelection] = []
     for corpus in selected_corpora:
-        defaults = loaded_by_corpus.get(corpus)
         default_q_file, default_corpus_path = CORPUS_DEFAULTS[corpus]
+        st.session_state.setdefault(f"suite_qf_{corpus}", default_q_file)
+        st.session_state.setdefault(f"suite_corpora_{corpus}", default_corpus_path)
+        st.session_state.setdefault(f"suite_levels_{corpus}", [])
+        st.session_state.setdefault(f"suite_ids_{corpus}", [])
         with st.expander(f"{corpus} questions", expanded=True):
             cols = st.columns(2)
             questions_file = cols[0].text_input(
                 f"{corpus} questions_file",
-                value=defaults.questions_file if defaults else default_q_file,
                 key=f"suite_qf_{corpus}",
             )
             path_to_corpora = cols[1].text_input(
                 f"{corpus} path_to_corpora",
-                value=defaults.path_to_corpora if defaults else default_corpus_path,
                 key=f"suite_corpora_{corpus}",
             )
             rows = _load_question_rows(questions_file)
@@ -1248,7 +1276,6 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
             selected_levels = st.multiselect(
                 f"{corpus} levels (empty = all)",
                 levels,
-                default=defaults.levels if defaults else [],
                 key=f"suite_levels_{corpus}",
             )
             ids = [row["id"] for row in rows]
@@ -1256,7 +1283,6 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
             selected_ids = st.multiselect(
                 f"{corpus} question_ids (empty = all selected levels)",
                 ids,
-                default=defaults.question_ids if defaults else [],
                 format_func=lambda i: f"{i} — {questions_meta.get(i, '')[:80]}",
                 key=f"suite_ids_{corpus}",
             )
@@ -1288,21 +1314,21 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
         "suite num_ctx",
         min_value=1024,
         max_value=131072,
-        value=loaded_config.num_ctx if loaded_config else 8192,
         step=1024,
+        key="suite_num_ctx",
     )
     reasoning_enabled = cols[1].checkbox(
         "suite reasoning_enabled",
-        value=loaded_config.reasoning_enabled if loaded_config else False,
+        key="suite_reasoning_enabled",
     )
     no_trace = cols[2].checkbox(
         "suite no_trace",
-        value=loaded_config.no_trace if loaded_config else True,
+        key="suite_no_trace",
     )
 
     output_dir = st.text_input(
         "suite output_dir",
-        value=loaded_config.output_dir if loaded_config else str(cfg["experiment_dir"]),
+        key="suite_output_dir",
     )
 
     config = ExperimentSuiteConfig(
