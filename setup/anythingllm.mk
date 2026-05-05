@@ -15,6 +15,8 @@ ANYTHINGLLM_CONTAINER := anythingllm-thesis
 ANYTHINGLLM_STORAGE   := $(HOME)/anythingllm-thesis-data
 
 anythingllm-up:
+	docker stop $(ANYTHINGLLM_CONTAINER) 2>/dev/null || true
+	docker rm $(ANYTHINGLLM_CONTAINER) 2>/dev/null || true
 	mkdir -p $(ANYTHINGLLM_STORAGE)
 	touch $(ANYTHINGLLM_STORAGE)/.env
 	docker run -d \
