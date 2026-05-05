@@ -7,10 +7,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from experiment_runner.corpus_isolation import isolated_corpus
 from experiment_runner.models.config import RunConfig
 from experiment_runner.models.enums import AutomationLevel, Corpus, SystemName
 from experiment_runner.models.question import Question
+from experiment_runner.models.result import RunResult
 from experiment_runner.runners.registry import get_runner
+
+
+_ISOLATED_CORPUS_SYSTEMS: frozenset[SystemName] = frozenset({
+    SystemName.ACE,
+    SystemName.CLAUDE_CODE_LOCAL,
+    SystemName.CHATGPT_CODEX,
+    SystemName.CLAWCODE,
+})
 
 
 def _load_questions(path: str, ids: list[str] | None) -> list[Question]:
@@ -33,6 +43,28 @@ def _output_path(output_dir: str, config: RunConfig) -> Path:
         f"__{uuid4().hex[:8]}.jsonl"
     )
     return Path(output_dir) / filename
+
+
+def _uses_isolated_corpus(config: RunConfig) -> bool:
+    return config.system in _ISOLATED_CORPUS_SYSTEMS and config.path_to_corpora is not None
+
+
+def _run_one_question(config: RunConfig, question: Question) -> RunResult:
+    runner = get_runner(config)
+    runner.setup()
+    try:
+        return runner.run(question)
+    finally:
+        runner.teardown()
+
+
+def _run_one_question_with_isolated_corpus(config: RunConfig, question: Question) -> RunResult:
+    assert config.path_to_corpora is not None
+    with isolated_corpus(Path(config.path_to_corpora)) as (prepared_corpus_path, snapshot):
+        isolated_config = config.model_copy(update={"path_to_corpora": prepared_corpus_path})
+        result = _run_one_question(isolated_config, question)
+    result.corpus_snapshot = snapshot
+    return result
 
 
 def run_experiment(args: argparse.Namespace) -> None:
@@ -65,18 +97,26 @@ def run_experiment(args: argparse.Namespace) -> None:
     out_path = _output_path(args.output_dir, config)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    runner = get_runner(config)
     total = len(questions)
 
-    runner.setup()
-    try:
+    if _uses_isolated_corpus(config):
         with out_path.open("x", encoding="utf-8") as f:
             for i, question in enumerate(questions, 1):
                 sys.stderr.write(f"[{i}/{total}] {question.id}: {question.question[:72]}\n")
-                result = runner.run(question)
+                result = _run_one_question_with_isolated_corpus(config, question)
                 f.write(result.model_dump_json() + "\n")
                 f.flush()
-    finally:
-        runner.teardown()
+    else:
+        runner = get_runner(config)
+        runner.setup()
+        try:
+            with out_path.open("x", encoding="utf-8") as f:
+                for i, question in enumerate(questions, 1):
+                    sys.stderr.write(f"[{i}/{total}] {question.id}: {question.question[:72]}\n")
+                    result = runner.run(question)
+                    f.write(result.model_dump_json() + "\n")
+                    f.flush()
+        finally:
+            runner.teardown()
 
     sys.stderr.write(f"results → {out_path}\n")

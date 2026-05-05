@@ -591,6 +591,43 @@ def _render_trace_steps(run) -> None:
                     st.write(step.content or "")
 
 
+def _render_corpus_snapshot(run) -> None:
+    if run is None or run.corpus_snapshot is None:
+        return
+
+    snapshot = run.corpus_snapshot
+    with st.expander("Corpus snapshot", expanded=False):
+        cols = st.columns(4)
+        cols[0].metric("Files", snapshot.file_count)
+        cols[1].metric("Size", f"{snapshot.total_bytes / 1024:.1f} KiB")
+        cols[2].metric(
+            "Manifest rows",
+            snapshot.manifest_entry_count if snapshot.manifest_entry_count is not None else "—",
+        )
+        cols[3].metric("Copied paths", len(snapshot.copied_paths))
+        st.caption(f"Source: `{snapshot.source_corpus_path}`")
+        st.caption(f"Prepared: `{snapshot.prepared_corpus_path}`")
+        if snapshot.temp_root_path:
+            fs_label = f" ({snapshot.temp_root_filesystem})" if snapshot.temp_root_filesystem else ""
+            st.caption(f"Temporary root: `{snapshot.temp_root_path}`{fs_label}")
+
+        if snapshot.error:
+            st.warning(snapshot.error)
+        if snapshot.config_json:
+            with st.expander("config.json", expanded=False):
+                st.json(snapshot.config_json)
+        if snapshot.copied_paths:
+            st.markdown("**Copied paths**")
+            st.code("\n".join(snapshot.copied_paths), language="text")
+        cols = st.columns(2)
+        if snapshot.pre_run_tree:
+            cols[0].markdown("**Before run**")
+            cols[0].code(snapshot.pre_run_tree, language="text")
+        if snapshot.post_run_tree:
+            cols[1].markdown("**After run**")
+            cols[1].code(snapshot.post_run_tree, language="text")
+
+
 def _render_run_details(df: pd.DataFrame, analyses, runs, run_id: str) -> None:
     st.subheader("Run details")
     if df.empty:
@@ -619,6 +656,7 @@ def _render_run_details(df: pd.DataFrame, analyses, runs, run_id: str) -> None:
         st.write(row["answer_text"] or "(empty)")
 
     _render_trace_steps(run)
+    _render_corpus_snapshot(run)
 
     analysis = analyses.get(run_id)
     if analysis is None:
@@ -983,6 +1021,8 @@ def _dataframe_for_single_run(run: RunResult) -> pd.DataFrame:
             "tool_call_count": run.metrics.tool_call_count if run.metrics else None,
             "tokens_total": tokens_total,
             "corpus_used": run.metrics.corpus_used if run.metrics else None,
+            "corpus_snapshot_enabled": run.corpus_snapshot.enabled if run.corpus_snapshot else False,
+            "corpus_snapshot_file_count": run.corpus_snapshot.file_count if run.corpus_snapshot else None,
         }
     ])
 

@@ -274,6 +274,25 @@ def test_dataframe_for_single_run_contains_detail_fields(tmp_path) -> None:
     assert df.loc[0, "tool_call_count"] == 2
 
 
+def test_dataframe_for_single_run_contains_optional_corpus_snapshot_fields(tmp_path) -> None:
+    payload = run_payload(run_id="run-123")
+    payload["corpus_snapshot"] = {
+        "enabled": True,
+        "source_corpus_path": "/source",
+        "prepared_corpus_path": "/tmp/prepared",
+        "file_count": 3,
+        "total_bytes": 42,
+    }
+    path = tmp_path / "result.jsonl"
+    path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    run = ui._run_from_result_path(str(path))
+
+    df = ui._dataframe_for_single_run(run)
+
+    assert bool(df.loc[0, "corpus_snapshot_enabled"]) is True
+    assert df.loc[0, "corpus_snapshot_file_count"] == 3
+
+
 def test_shell_command_quotes_arguments() -> None:
     assert ui._shell_command(["python", "-m", "mod", "--output-dir", "path with space"]) == (
         "python -m mod --output-dir 'path with space'"
