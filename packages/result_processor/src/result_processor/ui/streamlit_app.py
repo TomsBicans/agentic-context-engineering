@@ -52,7 +52,6 @@ from result_processor.visualization.loader import (
 )
 from result_processor.visualization.plots import ALL_PLOTS
 
-
 _AUTOMATION_BADGE: dict[AutomationLevel, str] = {
     AutomationLevel.FULL: "⚙ automated",
     AutomationLevel.PARTIAL: "◑ partial",
@@ -142,19 +141,19 @@ def _experiment_runner_cli() -> list[str]:
 
 
 def _build_experiment_run_args(
-    *,
-    system: str,
-    corpus: str,
-    questions_file: str,
-    output_dir: str,
-    model: str,
-    num_ctx: int,
-    path_to_corpora: str,
-    automation_level: str,
-    selected_ids: list[str],
-    reasoning_enabled: bool,
-    no_trace: bool,
-    dry_run: bool,
+        *,
+        system: str,
+        corpus: str,
+        questions_file: str,
+        output_dir: str,
+        model: str,
+        num_ctx: int,
+        path_to_corpora: str,
+        automation_level: str,
+        selected_ids: list[str],
+        reasoning_enabled: bool,
+        no_trace: bool,
+        dry_run: bool,
 ) -> list[str]:
     args = _experiment_runner_cli() + [
         "run",
@@ -292,9 +291,9 @@ def _render_run_errors(result_path: str) -> None:
 
 
 def _run_experiment_subprocess(
-    args: list[str],
-    expected_total: int,
-    status_label: str = "Running experiment",
+        args: list[str],
+        expected_total: int,
+        status_label: str = "Running experiment",
 ) -> tuple[int, str | None]:
     """Run experiment-runner with a live progress bar driven by `[i/total]` lines.
 
@@ -852,7 +851,8 @@ def _analysis_run_records(analysis_root: Path, suite_records: list[dict], experi
             "metadata": metadata or {},
             "suite_key": linked_suite["suite_key"] if linked_suite else None,
             "suite_id": linked_suite["suite_id"] if linked_suite else metadata.get("suite_id") if metadata else None,
-            "suite_name": linked_suite["suite_name"] if linked_suite else metadata.get("suite_name") if metadata else None,
+            "suite_name": linked_suite["suite_name"] if linked_suite else metadata.get(
+                "suite_name") if metadata else None,
             "suite_state_path": linked_suite["state_path"] if linked_suite else None,
             "suite_config_path": linked_suite["config_path"] if linked_suite else None,
         })
@@ -862,7 +862,8 @@ def _analysis_run_records(analysis_root: Path, suite_records: list[dict], experi
 def _analysis_runs_dataframe(records: list[dict]) -> pd.DataFrame:
     rows = []
     for index, record in enumerate(records):
-        analysis_df = build_dataframe_for_files(record["result_files"], record["analysis_dir"]) if record["result_files"] else pd.DataFrame()
+        analysis_df = build_dataframe_for_files(record["result_files"], record["analysis_dir"]) if record[
+            "result_files"] else pd.DataFrame()
         analyzed = int(analysis_df["support_rate"].notna().sum()) if "support_rate" in analysis_df else 0
         rows.append({
             "index": index,
@@ -987,11 +988,11 @@ def _analysis_job_state_dataframe(state_path: Path) -> tuple[dict, pd.DataFrame]
 
 
 def _render_analysis_job_progress(
-    state_path: Path,
-    result_files: list[str],
-    analysis_output_dir: Path,
-    analyses,
-    runs,
+        state_path: Path,
+        result_files: list[str],
+        analysis_output_dir: Path,
+        analyses,
+        runs,
 ) -> pd.DataFrame:
     summary, tasks_df = _analysis_job_state_dataframe(state_path)
     if not summary:
@@ -1013,7 +1014,8 @@ def _render_analysis_job_progress(
     if summary["cancel_requested"]:
         st.warning("Cancellation has been requested. The analysis job stops before starting the next run.")
 
-    selected_df = build_dataframe_for_files([Path(p) for p in result_files], analysis_output_dir) if result_files else pd.DataFrame()
+    selected_df = build_dataframe_for_files([Path(p) for p in result_files],
+                                            analysis_output_dir) if result_files else pd.DataFrame()
     if not tasks_df.empty:
         event = st.dataframe(
             tasks_df,
@@ -1402,10 +1404,10 @@ def _compact_names(values: list[str], *, max_items: int = 3) -> str:
 
 
 def _suggest_suite_name(
-    *,
-    systems: list[SystemName],
-    models: list[str],
-    corpus_selections: list[SuiteCorpusSelection],
+        *,
+        systems: list[SystemName],
+        models: list[str],
+        corpus_selections: list[SuiteCorpusSelection],
 ) -> str:
     corpus_parts: list[str] = []
     for selection in corpus_selections:
@@ -1427,14 +1429,15 @@ def _suggest_suite_name(
 
 
 def _suite_widget_state_from_config(
-    config: ExperimentSuiteConfig,
-    model_options: list[str],
+        config: ExperimentSuiteConfig,
+        model_options: list[str],
 ) -> dict[str, object]:
     state: dict[str, object] = {
         "suite_name_input": config.name,
         "suite_systems": [system for system in config.systems if system in _AUTOMATED_SYSTEMS],
         "suite_models": [model for model in config.models if model in model_options] or [model_options[0]],
-        "suite_corpora": [selection.corpus.value for selection in config.corpora if selection.corpus.value in CORPUS_DEFAULTS],
+        "suite_corpora": [selection.corpus.value for selection in config.corpora if
+                          selection.corpus.value in CORPUS_DEFAULTS],
         "suite_num_ctx": config.num_ctx,
         "suite_reasoning_enabled": config.reasoning_enabled,
         "suite_no_trace": config.no_trace,
@@ -1833,111 +1836,114 @@ def _tab_actions(cfg: dict, filtered: pd.DataFrame, analyses, runs) -> None:
     st.subheader("Actions")
     st.caption("Both actions shell out to the `result-processor` CLI so behaviour matches Makefile/terminal usage.")
 
-    st.markdown("### Analyze")
-    cols = st.columns([1, 1, 2])
-    resume = cols[0].checkbox("Resume (skip cached)", value=True)
-    only_filtered = cols[1].checkbox("Only filtered runs", value=False)
+    with st.expander("Run analysis jobs", expanded=False):
+        st.markdown("### Analyze")
+        cols = st.columns([1, 1, 2])
+        resume = cols[0].checkbox("Resume (skip cached)", value=True)
+        only_filtered = cols[1].checkbox("Only filtered runs", value=False)
 
-    if cols[2].button("▶ Run analyze", type="primary", width="stretch"):
-        args = _cli_path() + [
-            "analyze",
-            "--experiment-results-dir", str(cfg["experiment_dir"]),
-            "--output-dir", str(cfg["analysis_dir"]),
-            "--path-to-corpora", cfg["corpora_root"],
-            "--examiner-model", cfg["examiner_model"],
-            "--num-ctx", str(cfg["num_ctx"]),
-        ]
-        if not resume:
-            args.append("--no-resume")
-        if only_filtered and not filtered.empty:
-            input_files = sorted({_locate_source_file(cfg["experiment_dir"], rid) for rid in filtered["run_id"]})
-            input_files = [f for f in input_files if f]
-            if input_files:
-                args.append("--input-files")
-                args.extend(input_files)
-        rc = _run_subprocess(args, "Running analyze")
-        if rc == 0:
-            st.cache_data.clear()
+        if cols[2].button("▶ Run analyze", type="primary", width="stretch"):
+            args = _cli_path() + [
+                "analyze",
+                "--experiment-results-dir", str(cfg["experiment_dir"]),
+                "--output-dir", str(cfg["analysis_dir"]),
+                "--path-to-corpora", cfg["corpora_root"],
+                "--examiner-model", cfg["examiner_model"],
+                "--num-ctx", str(cfg["num_ctx"]),
+            ]
+            if not resume:
+                args.append("--no-resume")
+            if only_filtered and not filtered.empty:
+                input_files = sorted({_locate_source_file(cfg["experiment_dir"], rid) for rid in filtered["run_id"]})
+                input_files = [f for f in input_files if f]
+                if input_files:
+                    args.append("--input-files")
+                    args.extend(input_files)
+            rc = _run_subprocess(args, "Running analyze")
+            if rc == 0:
+                st.cache_data.clear()
 
-    st.markdown("### Analyze experiment suites")
-    suite_states = _suite_state_paths(cfg["suite_dir"])
-    if not suite_states:
-        st.info("No suite state files found yet.")
-    else:
-        selected_state = st.selectbox(
-            "Suite state",
-            suite_states,
-            format_func=lambda p: p.name,
-        )
-        result_files = _result_files_from_suite_states([selected_state])
-        selected_suite_state = load_suite_state(selected_state)
-        selected_suite_config_path = selected_suite_state.config_path or str(selected_state.with_suffix("").with_suffix(".json"))
-        default_analysis_name = (
-            f"{suite_slug(selected_suite_state.suite_name)}-"
-            f"{cfg['examiner_model'].replace(':', '-')}-analysis"
-        )
-        analysis_name = st.text_input("Analysis run name", value=default_analysis_name)
-        suite_resume = st.checkbox("Resume suite analysis (skip cached)", value=True)
-        st.caption(f"{len(result_files)} result file(s) found for selected suite state.")
-        analysis_output_dir, analysis_state_path, analysis_log_path = _analysis_job_paths(
-            cfg["analysis_dir"],
-            analysis_name,
-        )
-        run_args = _build_analysis_job_run_args(str(analysis_state_path))
-        cancel_args = _build_analysis_job_cancel_args(str(analysis_state_path))
-        st.code(_shell_command(run_args), language="bash")
-
-        if st.button(
-            "▶ Run / resume suite analysis",
-            type="primary",
-            width="stretch",
-            disabled=not result_files or not analysis_name.strip(),
-        ):
-            state = build_analysis_job_state(
-                job_name=analysis_name,
-                experiment_results_dir=str(cfg["experiment_dir"]),
-                output_dir=str(analysis_output_dir),
-                path_to_corpora=cfg["corpora_root"],
-                examiner_model=cfg["examiner_model"],
-                num_ctx=cfg["num_ctx"],
-                input_files=result_files,
-                resume=suite_resume,
-                log_path=str(analysis_log_path),
-                suite_id=selected_suite_state.suite_id,
-                suite_name=selected_suite_state.suite_name,
-                suite_config_path=str(Path(selected_suite_config_path).resolve()),
-                suite_state_path=str(selected_state.resolve()),
+        st.markdown("### Analyze experiment suites")
+        suite_states = _suite_state_paths(cfg["suite_dir"])
+        if not suite_states:
+            st.info("No suite state files found yet.")
+        else:
+            selected_state = st.selectbox(
+                "Suite state",
+                suite_states,
+                format_func=lambda p: p.name,
             )
-            save_analysis_job_state(analysis_state_path, state)
-            pid = _start_background_subprocess(run_args, analysis_log_path)
-            st.success(f"Started analysis job pid={pid}.")
-            st.rerun()
+            result_files = _result_files_from_suite_states([selected_state])
+            selected_suite_state = load_suite_state(selected_state)
+            selected_suite_config_path = selected_suite_state.config_path or str(
+                selected_state.with_suffix("").with_suffix(".json"))
+            default_analysis_name = (
+                f"{suite_slug(selected_suite_state.suite_name)}-"
+                f"{cfg['examiner_model'].replace(':', '-')}-analysis"
+            )
+            analysis_name = st.text_input("Analysis run name", value=default_analysis_name)
+            suite_resume = st.checkbox("Resume suite analysis (skip cached)", value=True)
+            st.caption(f"{len(result_files)} result file(s) found for selected suite state.")
+            analysis_output_dir, analysis_state_path, analysis_log_path = _analysis_job_paths(
+                cfg["analysis_dir"],
+                analysis_name,
+            )
+            run_args = _build_analysis_job_run_args(str(analysis_state_path))
+            cancel_args = _build_analysis_job_cancel_args(str(analysis_state_path))
+            st.code(_shell_command(run_args), language="bash")
 
-        cols = st.columns(2)
-        if cols[0].button("Cancel suite analysis", width="stretch", disabled=not analysis_state_path.exists()):
-            result = subprocess.run(cancel_args, capture_output=True, text=True, check=False)
-            if result.returncode == 0:
-                st.warning("Analysis cancellation requested.")
-            else:
-                st.error(result.stderr or result.stdout or f"Cancel failed with {result.returncode}")
-        if cols[1].button("Refresh analysis status", width="stretch"):
-            st.cache_data.clear()
-            st.rerun()
+            if st.button(
+                    "▶ Run / resume suite analysis",
+                    type="primary",
+                    width="stretch",
+                    disabled=not result_files or not analysis_name.strip(),
+            ):
+                state = build_analysis_job_state(
+                    job_name=analysis_name,
+                    experiment_results_dir=str(cfg["experiment_dir"]),
+                    output_dir=str(analysis_output_dir),
+                    path_to_corpora=cfg["corpora_root"],
+                    examiner_model=cfg["examiner_model"],
+                    num_ctx=cfg["num_ctx"],
+                    input_files=result_files,
+                    resume=suite_resume,
+                    log_path=str(analysis_log_path),
+                    suite_id=selected_suite_state.suite_id,
+                    suite_name=selected_suite_state.suite_name,
+                    suite_config_path=str(Path(selected_suite_config_path).resolve()),
+                    suite_state_path=str(selected_state.resolve()),
+                )
+                save_analysis_job_state(analysis_state_path, state)
+                pid = _start_background_subprocess(run_args, analysis_log_path)
+                st.success(f"Started analysis job pid={pid}.")
+                st.rerun()
 
-        st.caption(f"Analysis output: `{analysis_output_dir}`")
-        st.caption(f"Analysis state: `{analysis_state_path}`")
-        analysis_df = _render_analysis_job_progress(
-            analysis_state_path,
-            result_files,
-            analysis_output_dir,
-            analyses,
-            runs,
-        )
-        _render_inline_analysis_charts(analysis_df)
-        if analysis_log_path.exists():
-            with st.expander("Analysis job output", expanded=False):
-                st.code(analysis_log_path.read_text(encoding="utf-8")[-8000:], language="text")
+            cols = st.columns(2)
+            if cols[0].button("Cancel suite analysis", width="stretch", disabled=not analysis_state_path.exists()):
+                result = subprocess.run(cancel_args, capture_output=True, text=True, check=False)
+                if result.returncode == 0:
+                    st.warning("Analysis cancellation requested.")
+                else:
+                    st.error(result.stderr or result.stdout or f"Cancel failed with {result.returncode}")
+            if cols[1].button("Refresh analysis status", width="stretch"):
+                st.cache_data.clear()
+                st.rerun()
 
+            st.caption(f"Analysis output: `{analysis_output_dir}`")
+            st.caption(f"Analysis state: `{analysis_state_path}`")
+            analysis_df = _render_analysis_job_progress(
+                analysis_state_path,
+                result_files,
+                analysis_output_dir,
+                analyses,
+                runs,
+            )
+            _render_inline_analysis_charts(analysis_df)
+            if analysis_log_path.exists():
+                with st.expander("Analysis job output", expanded=False):
+                    st.code(analysis_log_path.read_text(encoding="utf-8")[-8000:], language="text")
+
+    st.divider()
     _render_suite_centric_analysis_results(cfg, runs)
 
     st.markdown("### Visualize")
