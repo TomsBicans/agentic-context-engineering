@@ -12,6 +12,7 @@ import re
 import shlex
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 import pandas as pd
@@ -1184,6 +1185,16 @@ def _suite_widget_state_from_config(
     return state
 
 
+def _copy_suite_config(config: ExperimentSuiteConfig) -> ExperimentSuiteConfig:
+    return config.model_copy(
+        deep=True,
+        update={
+            "suite_id": str(uuid.uuid4()),
+            "name": suite_slug(f"{config.name}-copy"),
+        },
+    )
+
+
 def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
     st.subheader("Experiment suite")
     st.caption(
@@ -1204,8 +1215,16 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
             format_func=lambda p: p.name,
             index=0,
         )
-        if selected_config_path and st.button("Load selected suite", width="stretch"):
+        cols = st.columns(2)
+        if selected_config_path and cols[0].button("Load selected suite", width="stretch"):
             st.session_state["loaded_suite_config_path"] = str(selected_config_path)
+            st.session_state.pop("copied_suite_config_json", None)
+            st.rerun()
+        if selected_config_path and cols[1].button("Copy selected suite", width="stretch"):
+            copied = _copy_suite_config(load_suite_config(selected_config_path))
+            st.session_state["copied_suite_config_json"] = copied.model_dump_json()
+            st.session_state.pop("loaded_suite_config_path", None)
+            st.session_state.pop("suite_loaded_config_for", None)
             st.rerun()
 
     loaded_path = st.session_state.get("loaded_suite_config_path")
@@ -1216,8 +1235,22 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
         except Exception as exc:
             st.warning(f"Could not load suite config: {exc}")
 
+    copied_config: ExperimentSuiteConfig | None = None
+    copied_config_json = st.session_state.get("copied_suite_config_json")
+    if copied_config_json:
+        try:
+            copied_config = ExperimentSuiteConfig.model_validate_json(copied_config_json)
+            st.info("Copied suite config. Save it to create a separate suite.")
+        except Exception as exc:
+            st.warning(f"Could not copy suite config: {exc}")
+            st.session_state.pop("copied_suite_config_json", None)
+
     model_options = _model_options()
-    if loaded_config and st.session_state.get("suite_loaded_config_for") != loaded_path:
+    if copied_config and st.session_state.get("suite_copied_config_for") != copied_config.suite_id:
+        for key, value in _suite_widget_state_from_config(copied_config, model_options).items():
+            st.session_state[key] = value
+        st.session_state["suite_copied_config_for"] = copied_config.suite_id
+    elif loaded_config and st.session_state.get("suite_loaded_config_for") != loaded_path:
         for key, value in _suite_widget_state_from_config(loaded_config, model_options).items():
             st.session_state[key] = value
         st.session_state["suite_loaded_config_for"] = loaded_path
@@ -1341,8 +1374,10 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
         reasoning_enabled=reasoning_enabled,
         no_trace=no_trace,
     )
-    if loaded_config:
+    if loaded_config and copied_config is None:
         config.suite_id = loaded_config.suite_id
+    elif copied_config:
+        config.suite_id = copied_config.suite_id
 
     config_path, state_path, launcher_log_path = _suite_paths(suite_dir, config)
     run_args = _build_suite_run_args(str(config_path), str(state_path))

@@ -244,6 +244,40 @@ def test_suite_widget_state_from_config_includes_per_corpus_selection_fields() -
     assert state["suite_no_trace"] is True
 
 
+def test_copy_suite_config_creates_independent_suite_identity() -> None:
+    config = ExperimentSuiteConfig(
+        suite_id="original-id",
+        name="saved suite",
+        systems=[SystemName.ACE, SystemName.CLAWCODE],
+        models=["qwen3:4b"],
+        corpora=[
+            SuiteCorpusSelection(
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="./corpora/questions/solar_system.json",
+                path_to_corpora="./corpora/scraped_data/solar_system_wiki",
+                levels=[2],
+                question_ids=["ss_L2_005"],
+            )
+        ],
+        output_dir="./data/experiment_results",
+        num_ctx=16384,
+        reasoning_enabled=True,
+        no_trace=True,
+    )
+
+    copied = ui._copy_suite_config(config)
+
+    assert copied.suite_id != config.suite_id
+    assert copied.name == "saved-suite-copy"
+    assert copied.systems == config.systems
+    assert copied.models == config.models
+    assert copied.corpora == config.corpora
+    assert copied.output_dir == config.output_dir
+    assert copied.num_ctx == config.num_ctx
+    assert copied.reasoning_enabled == config.reasoning_enabled
+    assert copied.no_trace == config.no_trace
+
+
 def test_result_files_from_suite_states_returns_existing_result_paths(tmp_path) -> None:
     existing = tmp_path / "result.jsonl"
     existing.write_text("{}\n", encoding="utf-8")
