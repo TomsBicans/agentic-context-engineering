@@ -44,6 +44,8 @@ def test_loader_joins_runs_and_analyses_with_dates_and_levels(tmp_path) -> None:
     assert str(df.loc[df["run_id"] == "r1", "run_date"].iloc[0]).endswith("UTC")
     assert df.loc[df["run_id"] == "r1", "support_rate"].iloc[0] == 1.0
     assert pd.isna(df.loc[df["run_id"] == "r2", "support_rate"].iloc[0])
+    assert df.loc[df["run_id"] == "r1", "analysis_time_s"].iloc[0] == 1.25
+    assert pd.isna(df.loc[df["run_id"] == "r2", "analysis_time_s"].iloc[0])
     assert df.loc[df["run_id"] == "r1", "answer_char_count"].iloc[0] == len(
         "[Jupiter is a planet.] [file:planets.md, lines:0-1]"
     )

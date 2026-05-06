@@ -60,6 +60,9 @@ class AnalysisResult(BaseModel):
     suite_config_path: Optional[str] = None
     suite_state_path: Optional[str] = None
 
+    # Total wall-clock time spent producing this analysis result.
+    analysis_time_s: Optional[float] = Field(default=None, ge=0.0)
+
     # Per-claim verifications.
     claims: list[ClaimAnalysis] = Field(default_factory=list)
 

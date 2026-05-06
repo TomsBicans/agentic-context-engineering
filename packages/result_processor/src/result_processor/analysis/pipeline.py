@@ -6,6 +6,7 @@ default — runs already present in the output are skipped.
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
@@ -141,6 +142,7 @@ def _analyze_one(
     suite_config_path: Optional[str] = None,
     suite_state_path: Optional[str] = None,
 ) -> AnalysisResult:
+    started_at = time.perf_counter()
     answer = run.answer_text or ""
 
     citations = extract_citations(answer)
@@ -176,6 +178,7 @@ def _analyze_one(
         )
 
     helpfulness, notes = _summarize(run, examiner, claim_analyses)
+    analysis_time_s = time.perf_counter() - started_at
     return _aggregate(
         run,
         claim_analyses,
@@ -183,6 +186,7 @@ def _analyze_one(
         examiner_model,
         helpfulness,
         notes,
+        analysis_time_s=analysis_time_s,
         analysis_run_name=analysis_run_name,
         suite_id=suite_id,
         suite_name=suite_name,
@@ -234,6 +238,7 @@ def _aggregate(
     helpfulness: Optional[int],
     notes: str,
     *,
+    analysis_time_s: Optional[float] = None,
     analysis_run_name: Optional[str] = None,
     suite_id: Optional[str] = None,
     suite_name: Optional[str] = None,
@@ -268,6 +273,7 @@ def _aggregate(
         suite_name=suite_name,
         suite_config_path=suite_config_path,
         suite_state_path=suite_state_path,
+        analysis_time_s=analysis_time_s,
         claims=claims,
         claims_total=total,
         claims_supported=supported,

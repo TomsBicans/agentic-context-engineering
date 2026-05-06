@@ -107,6 +107,7 @@ def _run_record(run: RunResult, analysis: AnalysisResult | None) -> dict[str, An
         "verdict": analysis.verdict.value if analysis else None,
         "helpfulness_rating": analysis.helpfulness_rating if analysis else None,
         "examiner_model": analysis.examiner_model if analysis else None,
+        "analysis_time_s": analysis.analysis_time_s if analysis else None,
         "analysis_run_name": analysis.analysis_run_name if analysis else None,
         "suite_id": analysis.suite_id if analysis else None,
         "suite_name": analysis.suite_name if analysis else None,

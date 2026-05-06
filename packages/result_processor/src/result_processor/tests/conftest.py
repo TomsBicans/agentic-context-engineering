@@ -41,11 +41,13 @@ def analysis_result(
     *,
     run_id: str = "run-1",
     status: ClaimStatus = ClaimStatus.SUPPORTED,
+    analysis_time_s: float | None = 1.25,
 ) -> AnalysisResult:
     return AnalysisResult(
         run_id=run_id,
         examiner_model="qwen3:4b",
         analyzed_at=datetime(2026, 4, 26, 12, 0, tzinfo=timezone.utc),
+        analysis_time_s=analysis_time_s,
         claims=[
             ClaimAnalysis(
                 statement="Jupiter is a planet.",

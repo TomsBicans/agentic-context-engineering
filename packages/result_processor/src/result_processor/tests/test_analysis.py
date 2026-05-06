@@ -108,6 +108,8 @@ def test_analyze_one_uses_citations_and_aggregates_examiner_results() -> None:
     assert result.support_rate == 1.0
     assert result.verdict == Verdict.PASS
     assert result.helpfulness_rating == 5
+    assert result.analysis_time_s is not None
+    assert result.analysis_time_s >= 0.0
 
 
 def test_analyze_one_marks_uncited_sentences_as_bad_references() -> None:
@@ -184,7 +186,15 @@ def test_aggregate_counts_statuses_and_pass_threshold() -> None:
         ClaimAnalysis(statement="d", status=ClaimStatus.BAD_REFERENCE),
     ]
 
-    result = _aggregate(run, claims, 1, "qwen3:4b", helpfulness=3, notes="Mixed.")
+    result = _aggregate(
+        run,
+        claims,
+        1,
+        "qwen3:4b",
+        helpfulness=3,
+        notes="Mixed.",
+        analysis_time_s=2.5,
+    )
 
     assert result.claims_total == 4
     assert result.claims_supported == 1
@@ -195,6 +205,7 @@ def test_aggregate_counts_statuses_and_pass_threshold() -> None:
     assert result.error_rate == 0.5
     assert result.overclaim_rate == 0.25
     assert result.verdict == Verdict.FAIL
+    assert result.analysis_time_s == 2.5
 
 
 def test_examiner_llm_classifies_missing_excerpt_without_network() -> None:
