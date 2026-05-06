@@ -283,6 +283,108 @@ def helpfulness_distribution(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def analysis_time_by_system(df: pd.DataFrame) -> go.Figure:
+    subset = df.dropna(subset=["analysis_time_s"])
+    if subset.empty:
+        return _empty("No analysis_time_s data")
+    fig = px.box(
+        subset,
+        x="system_name",
+        y="analysis_time_s",
+        color="system_name",
+        points="all",
+        hover_data=["question_id", "model", "examiner_model", "claims_total"],
+        title="Analysis time distribution by system",
+        labels={"system_name": "System", "analysis_time_s": "Analysis time (s)"},
+    )
+    fig.update_layout(showlegend=False)
+    return fig
+
+
+def analysis_time_by_examiner(df: pd.DataFrame) -> go.Figure:
+    subset = df.dropna(subset=["analysis_time_s", "examiner_model"])
+    if subset.empty:
+        return _empty("No analysis_time_s / examiner_model data")
+    fig = px.box(
+        subset,
+        x="examiner_model",
+        y="analysis_time_s",
+        color="examiner_model",
+        points="all",
+        hover_data=["question_id", "system_name", "model", "claims_total"],
+        title="Analysis time distribution by examiner model",
+        labels={"examiner_model": "Examiner model", "analysis_time_s": "Analysis time (s)"},
+    )
+    fig.update_layout(showlegend=False)
+    return fig
+
+
+def analysis_time_vs_claims(df: pd.DataFrame) -> go.Figure:
+    subset = df.dropna(subset=["analysis_time_s", "claims_total"])
+    if subset.empty:
+        return _empty("No analysis_time_s / claims_total data")
+    fig = px.scatter(
+        subset,
+        x="claims_total",
+        y="analysis_time_s",
+        color="system_name",
+        symbol="corpus",
+        hover_data=["question_id", "model", "examiner_model", "support_rate"],
+        title="Analysis time vs total factual claims",
+        labels={
+            "claims_total": "Total factual claims",
+            "analysis_time_s": "Analysis time (s)",
+            "system_name": "System",
+            "corpus": "Corpus",
+        },
+    )
+    return fig
+
+
+def analysis_time_vs_answer_chars(df: pd.DataFrame) -> go.Figure:
+    subset = df.dropna(subset=["analysis_time_s", "answer_char_count"])
+    if subset.empty:
+        return _empty("No analysis_time_s / answer_char_count data")
+    fig = px.scatter(
+        subset,
+        x="answer_char_count",
+        y="analysis_time_s",
+        color="system_name",
+        symbol="corpus",
+        hover_data=["question_id", "model", "examiner_model", "claims_total"],
+        title="Analysis time vs final answer length",
+        labels={
+            "answer_char_count": "Final answer length (characters)",
+            "analysis_time_s": "Analysis time (s)",
+            "system_name": "System",
+            "corpus": "Corpus",
+        },
+    )
+    return fig
+
+
+def execution_time_vs_analysis_time(df: pd.DataFrame) -> go.Figure:
+    subset = df.dropna(subset=["execution_time_s", "analysis_time_s"])
+    if subset.empty:
+        return _empty("No execution_time_s / analysis_time_s data")
+    fig = px.scatter(
+        subset,
+        x="execution_time_s",
+        y="analysis_time_s",
+        color="system_name",
+        symbol="corpus",
+        hover_data=["question_id", "model", "examiner_model", "claims_total"],
+        title="Experiment execution time vs analysis time",
+        labels={
+            "execution_time_s": "Execution time (s)",
+            "analysis_time_s": "Analysis time (s)",
+            "system_name": "System",
+            "corpus": "Corpus",
+        },
+    )
+    return fig
+
+
 # Registry — name → builder function. Used by the pipeline.
 ALL_PLOTS = {
     "support_by_system": support_rate_by_system,
@@ -299,6 +401,11 @@ ALL_PLOTS = {
     "tool_calls_box": tool_call_distribution,
     "verdict_breakdown": verdict_breakdown,
     "helpfulness_box": helpfulness_distribution,
+    "analysis_time_by_system": analysis_time_by_system,
+    "analysis_time_by_examiner": analysis_time_by_examiner,
+    "analysis_time_vs_claims": analysis_time_vs_claims,
+    "analysis_time_vs_answer_chars": analysis_time_vs_answer_chars,
+    "execution_time_vs_analysis_time": execution_time_vs_analysis_time,
 }
 
 
