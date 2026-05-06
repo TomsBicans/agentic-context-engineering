@@ -397,6 +397,8 @@ def test_create_analysis_export_zip_includes_suite_analysis_and_charts(tmp_path)
     assert "suite/suite.json" in names
     assert "suite/suite.state.json" in names
     assert "tables/analysis_results.csv" in names
+    assert "charts/time_vs_answer_chars.html" in names
+    assert "charts/error_rate_by_system.html" in names
     assert "experiment_data/analysis-a/run.jsonl" in names
     assert "analysis_results/analysis-a/run.jsonl" in names
 

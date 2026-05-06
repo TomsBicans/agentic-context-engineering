@@ -14,6 +14,7 @@ def run_payload(
     question_id: str = "ss_L2_001",
     answer_text: str = "[Jupiter is a planet.] [file:planets.md, lines:0-1]",
     created_at: str = "2026-04-26T11:55:51Z",
+    answer_error: str | None = None,
 ) -> dict[str, Any]:
     return {
         "run_id": run_id,
@@ -26,6 +27,7 @@ def run_payload(
         "model": "qwen3:4b",
         "reasoning_enabled": False,
         "answer_text": answer_text,
+        "answer_error": answer_error,
         "metrics": {
             "execution_time_s": 12.5,
             "tool_call_count": 2,

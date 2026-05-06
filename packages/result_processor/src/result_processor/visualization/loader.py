@@ -63,6 +63,57 @@ def load_analyses(analysis_results_dir: Path) -> dict[str, AnalysisResult]:
     return by_run_id
 
 
+def _answer_char_count(answer_text: str | None) -> int:
+    return len(answer_text or "")
+
+
+def _run_record(run: RunResult, analysis: AnalysisResult | None) -> dict[str, Any]:
+    tokens_total = (
+        run.metrics.tokens.total
+        if run.metrics and run.metrics.tokens
+        else None
+    )
+    return {
+        "run_id": run.run_id,
+        "created_at": run.created_at,
+        "run_date": run.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
+        "system_name": run.system_name.value,
+        "corpus": run.corpus.value,
+        "model": run.model,
+        "reasoning_enabled": run.reasoning_enabled,
+        "question_id": run.question_id,
+        "question_text": run.question_text,
+        "level": _parse_level(run.question_id),
+        "automation_level": run.automation_level.value,
+        "answer_text": run.answer_text,
+        "answer_char_count": _answer_char_count(run.answer_text),
+        "answer_error": run.answer_error,
+        "has_answer_error": bool(run.answer_error),
+        "execution_time_s": run.metrics.execution_time_s if run.metrics else None,
+        "step_count": run.metrics.step_count if run.metrics else None,
+        "tool_call_count": run.metrics.tool_call_count if run.metrics else None,
+        "tokens_total": tokens_total,
+        "corpus_used": run.metrics.corpus_used if run.metrics else None,
+        "corpus_snapshot_enabled": run.corpus_snapshot.enabled if run.corpus_snapshot else False,
+        "corpus_snapshot_file_count": run.corpus_snapshot.file_count if run.corpus_snapshot else None,
+        # analysis fields — None when no analysis yet
+        "support_rate": analysis.support_rate if analysis else None,
+        "error_rate": analysis.error_rate if analysis else None,
+        "overclaim_rate": analysis.overclaim_rate if analysis else None,
+        "unsupported_claim_ratio": analysis.unsupported_claim_ratio if analysis else None,
+        "claims_total": analysis.claims_total if analysis else None,
+        "claims_supported": analysis.claims_supported if analysis else None,
+        "claims_without_citation_count": analysis.claims_without_citation_count if analysis else None,
+        "verdict": analysis.verdict.value if analysis else None,
+        "helpfulness_rating": analysis.helpfulness_rating if analysis else None,
+        "examiner_model": analysis.examiner_model if analysis else None,
+        "analysis_run_name": analysis.analysis_run_name if analysis else None,
+        "suite_id": analysis.suite_id if analysis else None,
+        "suite_name": analysis.suite_name if analysis else None,
+        "suite_state_path": analysis.suite_state_path if analysis else None,
+    }
+
+
 def build_dataframe(
     experiment_results_dir: Path,
     analysis_results_dir: Path,
@@ -77,49 +128,7 @@ def build_dataframe(
 
     records: list[dict[str, Any]] = []
     for run in runs:
-        analysis = analyses.get(run.run_id)
-        tokens_total = (
-            run.metrics.tokens.total
-            if run.metrics and run.metrics.tokens
-            else None
-        )
-        record: dict[str, Any] = {
-            "run_id": run.run_id,
-            "created_at": run.created_at,
-            "run_date": run.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
-            "system_name": run.system_name.value,
-            "corpus": run.corpus.value,
-            "model": run.model,
-            "reasoning_enabled": run.reasoning_enabled,
-            "question_id": run.question_id,
-            "question_text": run.question_text,
-            "level": _parse_level(run.question_id),
-            "automation_level": run.automation_level.value,
-            "answer_text": run.answer_text,
-            "execution_time_s": run.metrics.execution_time_s if run.metrics else None,
-            "step_count": run.metrics.step_count if run.metrics else None,
-            "tool_call_count": run.metrics.tool_call_count if run.metrics else None,
-            "tokens_total": tokens_total,
-            "corpus_used": run.metrics.corpus_used if run.metrics else None,
-            "corpus_snapshot_enabled": run.corpus_snapshot.enabled if run.corpus_snapshot else False,
-            "corpus_snapshot_file_count": run.corpus_snapshot.file_count if run.corpus_snapshot else None,
-            # analysis fields — None when no analysis yet
-            "support_rate": analysis.support_rate if analysis else None,
-            "error_rate": analysis.error_rate if analysis else None,
-            "overclaim_rate": analysis.overclaim_rate if analysis else None,
-            "unsupported_claim_ratio": analysis.unsupported_claim_ratio if analysis else None,
-            "claims_total": analysis.claims_total if analysis else None,
-            "claims_supported": analysis.claims_supported if analysis else None,
-            "claims_without_citation_count": analysis.claims_without_citation_count if analysis else None,
-            "verdict": analysis.verdict.value if analysis else None,
-            "helpfulness_rating": analysis.helpfulness_rating if analysis else None,
-            "examiner_model": analysis.examiner_model if analysis else None,
-            "analysis_run_name": analysis.analysis_run_name if analysis else None,
-            "suite_id": analysis.suite_id if analysis else None,
-            "suite_name": analysis.suite_name if analysis else None,
-            "suite_state_path": analysis.suite_state_path if analysis else None,
-        }
-        records.append(record)
+        records.append(_run_record(run, analyses.get(run.run_id)))
 
     return pd.DataFrame.from_records(records)
 
@@ -133,46 +142,6 @@ def build_dataframe_for_files(
 
     records: list[dict[str, Any]] = []
     for run in runs:
-        analysis = analyses.get(run.run_id)
-        tokens_total = (
-            run.metrics.tokens.total
-            if run.metrics and run.metrics.tokens
-            else None
-        )
-        records.append({
-            "run_id": run.run_id,
-            "created_at": run.created_at,
-            "run_date": run.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
-            "system_name": run.system_name.value,
-            "corpus": run.corpus.value,
-            "model": run.model,
-            "reasoning_enabled": run.reasoning_enabled,
-            "question_id": run.question_id,
-            "question_text": run.question_text,
-            "level": _parse_level(run.question_id),
-            "automation_level": run.automation_level.value,
-            "answer_text": run.answer_text,
-            "execution_time_s": run.metrics.execution_time_s if run.metrics else None,
-            "step_count": run.metrics.step_count if run.metrics else None,
-            "tool_call_count": run.metrics.tool_call_count if run.metrics else None,
-            "tokens_total": tokens_total,
-            "corpus_used": run.metrics.corpus_used if run.metrics else None,
-            "corpus_snapshot_enabled": run.corpus_snapshot.enabled if run.corpus_snapshot else False,
-            "corpus_snapshot_file_count": run.corpus_snapshot.file_count if run.corpus_snapshot else None,
-            "support_rate": analysis.support_rate if analysis else None,
-            "error_rate": analysis.error_rate if analysis else None,
-            "overclaim_rate": analysis.overclaim_rate if analysis else None,
-            "unsupported_claim_ratio": analysis.unsupported_claim_ratio if analysis else None,
-            "claims_total": analysis.claims_total if analysis else None,
-            "claims_supported": analysis.claims_supported if analysis else None,
-            "claims_without_citation_count": analysis.claims_without_citation_count if analysis else None,
-            "verdict": analysis.verdict.value if analysis else None,
-            "helpfulness_rating": analysis.helpfulness_rating if analysis else None,
-            "examiner_model": analysis.examiner_model if analysis else None,
-            "analysis_run_name": analysis.analysis_run_name if analysis else None,
-            "suite_id": analysis.suite_id if analysis else None,
-            "suite_name": analysis.suite_name if analysis else None,
-            "suite_state_path": analysis.suite_state_path if analysis else None,
-        })
+        records.append(_run_record(run, analyses.get(run.run_id)))
 
     return pd.DataFrame.from_records(records)
