@@ -19,9 +19,9 @@ _STORAGE_DIR = Path.home() / "anythingllm-thesis-data"
 _READY_URL = "http://localhost:3001/api/ping"
 _READY_TIMEOUT_SECONDS = 90
 
-# Replaces the ACE-specific tooling strategy section of EXAMINEE_SYSTEM_MESSAGE,
-# which references tools (search(), list_paths(), time_left()) that do not exist
-# in AnythingLLM. The citation format and offline constraints are inherited as-is.
+# Adds runtime-specific guidance for AnythingLLM. The shared prompt keeps the
+# corpus-only and citation contract; this suffix explains how retrieval works
+# in the AnythingLLM workspace.
 _ANYTHINGLLM_PROMPT_SUFFIX = """
 AnythingLLM runtime notes
 - You are operating inside an AnythingLLM workspace with the corpus pre-loaded.

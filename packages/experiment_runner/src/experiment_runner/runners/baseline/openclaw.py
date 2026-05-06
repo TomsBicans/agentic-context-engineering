@@ -19,9 +19,8 @@ _TIMEOUT_SECONDS = 180
 # between corpora (e.g. "thesis-oblivion_wiki").
 _AGENT_PREFIX = "thesis"
 
-# Overrides the ACE-specific tooling strategy section of EXAMINEE_SYSTEM_MESSAGE.
-# OpenClaw exposes a `read` tool and an `exec` tool; there is no time_left(),
-# list_paths(), or search() — those are ACE-specific.
+# Adds runtime-specific guidance for OpenClaw. The shared prompt keeps the
+# corpus-only and citation contract; this suffix describes OpenClaw's tools.
 _OPENCLAW_PROMPT_SUFFIX = """
 OpenClaw runtime notes
 - You are a research agent. Answer using ONLY the files in your workspace (the corpus).
