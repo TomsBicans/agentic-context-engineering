@@ -33,6 +33,21 @@ def test_model_options_include_default_when_ollama_has_no_default(monkeypatch) -
     assert ui._model_options() == ["qwen3:4b", "qwen3:14b"]
 
 
+def test_refresh_ollama_models_clears_cached_loader(monkeypatch) -> None:
+    calls: list[bool] = []
+
+    class Loader:
+        @staticmethod
+        def clear() -> None:
+            calls.append(True)
+
+    monkeypatch.setattr(ui, "_load_ollama_models", Loader)
+
+    ui._refresh_ollama_models()
+
+    assert calls == [True]
+
+
 def test_query_ollama_models_returns_empty_on_command_failure(monkeypatch) -> None:
     def fail(*args, **kwargs):
         raise OSError("ollama missing")

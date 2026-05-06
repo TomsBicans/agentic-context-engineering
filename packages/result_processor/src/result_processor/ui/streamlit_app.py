@@ -244,6 +244,10 @@ def _query_ollama_models() -> list[str]:
 _load_ollama_models = st.cache_data(show_spinner=False, ttl=60)(_query_ollama_models)
 
 
+def _refresh_ollama_models() -> None:
+    _load_ollama_models.clear()
+
+
 def _model_options(default: str = DEFAULT_MODEL) -> list[str]:
     models = _load_ollama_models()
     if default not in models:
@@ -255,6 +259,12 @@ def _select_model(label: str, default: str = DEFAULT_MODEL, *, key: str) -> str:
     options = _model_options(default)
     index = options.index(default) if default in options else 0
     return st.selectbox(label, options, index=index, key=key)
+
+
+def _render_model_refresh_button(*, key: str, width: str = "stretch") -> None:
+    if st.button("🔄 Refresh models", key=key, width=width):
+        _refresh_ollama_models()
+        st.rerun()
 
 
 def _render_run_errors(result_path: str) -> None:
@@ -404,6 +414,9 @@ def _sidebar() -> dict:
         index=default_model_index,
         key="examiner_model",
     )
+    if st.sidebar.button("🔄 Refresh models", key="refresh_sidebar_models", width="stretch"):
+        _refresh_ollama_models()
+        st.rerun()
     num_ctx = st.sidebar.number_input("num_ctx", min_value=1024, max_value=131072, value=8192, step=1024)
 
     if st.sidebar.button("🔄 Refresh data", width="stretch"):
@@ -1547,6 +1560,7 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
         model_options,
         key="suite_models",
     )
+    _render_model_refresh_button(key="refresh_suite_models")
 
     selected_corpora = st.multiselect(
         "corpora",
@@ -1765,6 +1779,7 @@ def _render_run_experiment_form(cfg: dict) -> None:
     cols = st.columns(3)
     with cols[0]:
         model = _select_model("model", key="experiment_model")
+        _render_model_refresh_button(key="refresh_run_experiment_models")
     num_ctx = cols[1].number_input(
         "num_ctx",
         min_value=1024,
