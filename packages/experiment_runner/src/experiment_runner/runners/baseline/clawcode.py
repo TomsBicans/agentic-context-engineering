@@ -24,16 +24,6 @@ _ALLOWED_TOOLS = "read_file,glob_search,grep_search"
 _OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"
 _OLLAMA_API_KEY = "ollama"
 
-_CLAWCODE_PROMPT_SUFFIX = """
-ClawCode runtime notes
-- For this run, the corpus is mounted at ./corpus.
-- Available tools are grep_search, glob_search, and read_file.
-- Use grep_search or glob_search instead of search() or list_paths().
-- There is no time_left() tool; keep the search bounded and answer within the run budget.
-- Do not search, read, or cite files under ./.claw.
-""".strip()
-
-
 class ClawCodeRunner(BaseRunner):
     """Runner for the ClawCode CLI baseline.
 
@@ -136,7 +126,7 @@ class ClawCodeRunner(BaseRunner):
 
     @staticmethod
     def _build_prompt(question: str) -> str:
-        return f"{EXAMINEE_SYSTEM_MESSAGE}\n\n{_CLAWCODE_PROMPT_SUFFIX}\n\nQuestion:\n{question}"
+        return f"{EXAMINEE_SYSTEM_MESSAGE}\n\nQuestion:\n{question}"
 
     def _invoke_claw(self, prompt: str, workspace: Path) -> subprocess.CompletedProcess:
         # ClawCode requires a provider-prefixed model identifier ("openai/qwen3:8b").

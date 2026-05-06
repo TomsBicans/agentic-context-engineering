@@ -19,19 +19,6 @@ _STORAGE_DIR = Path.home() / "anythingllm-thesis-data"
 _READY_URL = "http://localhost:3001/api/ping"
 _READY_TIMEOUT_SECONDS = 90
 
-# Adds runtime-specific guidance for AnythingLLM. The shared prompt keeps the
-# corpus-only and citation contract; this suffix explains how retrieval works
-# in the AnythingLLM workspace.
-_ANYTHINGLLM_PROMPT_SUFFIX = """
-AnythingLLM runtime notes
-- You are operating inside an AnythingLLM workspace with the corpus pre-loaded.
-- Document retrieval is automatic — do not reference or call any external tools.
-- Focus on producing a factual, cited answer using only the retrieved context.
-- If the retrieved context does not contain enough information, say so explicitly.
-""".strip()
-
-
-
 class AnythingLLMRunner(BaseRunner):
     """Runner for the AnythingLLM baseline via the official `any` CLI.
 
@@ -137,7 +124,7 @@ class AnythingLLMRunner(BaseRunner):
 
     @staticmethod
     def _build_prompt(question: str) -> str:
-        return f"{EXAMINEE_SYSTEM_MESSAGE}\n\n{_ANYTHINGLLM_PROMPT_SUFFIX}\n\nQuestion:\n{question}"
+        return f"{EXAMINEE_SYSTEM_MESSAGE}\n\nQuestion:\n{question}"
 
     def _invoke_any(self, prompt: str, workspace: str) -> subprocess.CompletedProcess:
         cmd = [
