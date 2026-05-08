@@ -14,7 +14,15 @@ skinparam activity {
 start
 
 :Parse CLI or dashboard request;
-:Build RunConfig\n(system, corpus, model,\nautomation level, corpus path);
+
+note right
+  Alternative entry: **suite run --config <file>**
+  expands a YAML config into multiple single-system
+  tasks and executes them with resumable state
+  tracking (suite plan / run / status / cancel).
+end note
+
+:Build RunConfig\n(system, corpus, model,\nautomation level, corpus path,\nreasoning_enabled, num_ctx, store_trace);
 :Load question file;
 
 if (Question IDs selected?) then (yes)
@@ -31,24 +39,53 @@ if (Dry run?) then (yes)
 endif
 
 :Create unique output JSONL path;
-:Instantiate system runner\nthrough runner registry;
-:runner.setup();
 
-repeat
-  :Take next question;
-  :runner.run(question);
+if (System requires corpus isolation?\nACE, Claude Code Local, Codex, ClawCode) then (yes)
 
-  if (System invocation succeeds?) then (yes)
-    :Collect answer text,\nmetrics, and optional trace;
-  else (no)
-    :Store answer_error in RunResult\ninstead of aborting the batch;
-  endif
+  repeat
+    :Take next question;
+    :Copy corpus to tmpfs (/dev/shm)\nor /tmp if space insufficient;
+    :Capture pre-run filesystem snapshot\n(CorpusSnapshot.pre_run_tree);
+    :Instantiate runner → setup();
+    :runner.run(question);
+    :runner.teardown();
+    :Capture post-run filesystem snapshot\n(CorpusSnapshot.post_run_tree);
 
-  :Append RunResult JSON\nas one JSONL row;
-  :Flush output file;
-repeat while (More questions?) is (yes)
+    if (Run succeeds?) then (yes)
+      :Collect answer text, metrics,\noptional session trace;
+    else (no)
+      :Store answer_error in RunResult;
+    endif
 
-:runner.teardown();
+    :Attach CorpusSnapshot to RunResult;
+    :Append RunResult JSON as one JSONL row;
+    :Flush output file;
+    :Remove temporary corpus copy;
+  repeat while (More questions?) is (yes)
+
+else (no)
+
+  :Instantiate system runner\nthrough runner registry;
+  :runner.setup();
+
+  repeat
+    :Take next question;
+    :runner.run(question);
+
+    if (Run succeeds?) then (yes)
+      :Collect answer text,\nmetrics, and optional trace;
+    else (no)
+      :Store answer_error in RunResult\ninstead of aborting the batch;
+    endif
+
+    :Append RunResult JSON\nas one JSONL row;
+    :Flush output file;
+  repeat while (More questions?) is (yes)
+
+  :runner.teardown();
+
+endif
+
 :Print result file path;
 
 stop
@@ -58,6 +95,11 @@ legend right
   execute the same question set against
   different systems while preserving a
   common result schema for later analysis.
+  |= Field |= Populated by |
+  | answer_text, execution_time_s | all runners |
+  | tool_call_sequence, step_count | ACE, local CLI runners |
+  | token counts | runners with structured output |
+  | CorpusSnapshot | isolated-corpus runs only |
 endlegend
 
 @enduml
