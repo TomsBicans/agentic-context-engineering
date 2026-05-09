@@ -1,0 +1,77 @@
+@startuml
+title Software Development Process Using CLI Coding Agents
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam activity {
+  BackgroundColor #F8F8F8
+  BorderColor #555555
+  DiamondBackgroundColor #FFF7E6
+  DiamondBorderColor #555555
+}
+skinparam swimlane {
+  BorderColor #555555
+  TitleBackgroundColor #EEEEEE
+  TitleFontStyle bold
+}
+
+|Researcher|
+start
+
+:Identify required functionality\nor system improvement;
+
+if (Architecture decision required?\nnew package, library choice,\nmajor structural change) then (yes)
+  :Evaluate architectural trade-offs mentally\n(impact on future work, library choices,\npackage structure);
+  note right
+  Inspired by ADR practice - decision is
+  carefully reasoned but not formally
+  documented; kept in the author's head.
+  end note
+  :Implement architectural step\nwith full author effort;
+else (no)
+endif
+
+:Formulate idea with full technical context\n(task description, affected modules,\nexpected behaviour, constraints);
+
+note right
+  Key bottleneck: translating a precise,
+  context-rich idea into a written prompt.
+  Voice-to-text (local speech recognition)
+  used to accelerate this step.
+end note
+
+:Write prompt — attach **@file** references\nfor relevant source files and provide\nadditional context where needed;
+
+repeat
+
+  |CLI Coding Agent\n(Claude Code / OpenAI Codex)|
+
+  :Receive prompt and referenced file context;
+  :Explore codebase\n(grep, ls, read files);
+  :Plan implementation approach;
+  :Implement requested functionality;
+  :Write unit tests;
+  :Execute shell commands\n(run tests, lint, verify output);
+  :Return result — code changes,\ntest output, and summary;
+
+  |Researcher|
+
+  :Review generated code,\ntest results, and behaviour;
+
+backward:Adjust prompt — correct\nmisunderstood requirements\nor add missing context;
+repeat while (Result acceptable?) is (no)
+
+:Accept and commit changes;
+
+stop
+
+legend right
+  Developer time allocation in practice:
+  majority spent crafting quality prompts
+  and reviewing agent-produced results.
+  Agents autonomously handle most steps
+  of the implementation cycle.
+endlegend
+
+@enduml
