@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-from experiment_runner.commands.run import _load_questions
+from experiment_runner.commands.run import load_questions
 from experiment_runner.models.enums import AutomationLevel, SystemName
 from experiment_runner.models.question import Question
 from experiment_runner.models.suite import (
@@ -134,7 +134,7 @@ def build_suite_tasks(config: ExperimentSuiteConfig) -> list[SuiteTask]:
     raw_tasks: list[tuple[int, int, int, str, int, SuiteTask]] = []
 
     for corpus_index, selection in enumerate(config.corpora):
-        questions = _selected_questions(selection, _load_questions(selection.questions_file, None))
+        questions = _selected_questions(selection, load_questions(selection.questions_file, None))
         if not questions:
             raise ValueError(f"No questions selected for corpus {selection.corpus.value}")
         questions = sorted(questions, key=lambda q: (q.level, q.id))

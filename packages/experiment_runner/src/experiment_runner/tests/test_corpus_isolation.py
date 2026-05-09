@@ -154,7 +154,6 @@ def test_run_experiment_uses_clean_isolated_corpus_per_question(monkeypatch, tmp
     assert all(not path.exists() for path in seen_paths)
     result_file = next((tmp_path / "results").glob("*.jsonl"))
     rows = [json.loads(line) for line in result_file.read_text(encoding="utf-8").splitlines()]
-    assert all(row["corpus_snapshot"]["enabled"] for row in rows)
     assert all(row["corpus_snapshot"]["file_count"] == 3 for row in rows)
     assert all(".claw" not in row["corpus_snapshot"]["pre_run_tree"] for row in rows)
 

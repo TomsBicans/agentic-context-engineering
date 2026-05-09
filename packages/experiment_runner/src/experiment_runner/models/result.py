@@ -9,7 +9,6 @@ from .trace import SessionTrace
 
 
 class CorpusSnapshot(BaseModel):
-    enabled: bool = True
     source_corpus_path: str
     prepared_corpus_path: str
     temp_root_path: Optional[str] = None

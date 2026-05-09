@@ -23,7 +23,7 @@ _ISOLATED_CORPUS_SYSTEMS: frozenset[SystemName] = frozenset({
 })
 
 
-def _load_questions(path: str, ids: list[str] | None) -> list[Question]:
+def load_questions(path: str, ids: list[str] | None) -> list[Question]:
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
     questions = [Question(**q) for q in raw]
     if not ids:
@@ -59,7 +59,8 @@ def _run_one_question(config: RunConfig, question: Question) -> RunResult:
 
 
 def _run_one_question_with_isolated_corpus(config: RunConfig, question: Question) -> RunResult:
-    assert config.path_to_corpora is not None
+    if config.path_to_corpora is None:
+        raise ValueError("isolated corpus requires path_to_corpora to be set")
     with isolated_corpus(Path(config.path_to_corpora)) as (prepared_corpus_path, snapshot):
         isolated_config = config.model_copy(update={"path_to_corpora": prepared_corpus_path})
         result = _run_one_question(isolated_config, question)
@@ -81,7 +82,7 @@ def run_experiment(args: argparse.Namespace) -> None:
         inference_config=inference_config,
     )
 
-    questions = _load_questions(args.questions_file, args.question_ids)
+    questions = load_questions(args.questions_file, args.question_ids)
     if not questions:
         raise ValueError("No questions to run after filtering")
 
