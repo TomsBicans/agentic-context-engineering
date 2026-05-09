@@ -15,6 +15,8 @@ from experiment_runner.models.result import RunResult
 from experiment_runner.runners.registry import get_runner
 
 
+RESULT_PATH_PREFIX = "results → "
+
 _ISOLATED_CORPUS_SYSTEMS: frozenset[SystemName] = frozenset({
     SystemName.ACE,
     SystemName.CLAUDE_CODE_LOCAL,
@@ -120,4 +122,4 @@ def run_experiment(args: argparse.Namespace) -> None:
         finally:
             runner.teardown()
 
-    sys.stderr.write(f"results → {out_path}\n")
+    sys.stderr.write(f"{RESULT_PATH_PREFIX}{out_path}\n")

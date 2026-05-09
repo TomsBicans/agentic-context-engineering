@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-from experiment_runner.commands.run import load_questions
+from experiment_runner.commands.run import RESULT_PATH_PREFIX, load_questions
 from experiment_runner.models.enums import AutomationLevel, SystemName
 from experiment_runner.models.question import Question
 from experiment_runner.models.suite import (
@@ -22,7 +22,6 @@ from experiment_runner.models.suite import (
 from experiment_runner.runners.registry import DISABLED_SYSTEMS, SYSTEM_AUTOMATION_LEVELS
 
 
-_RESULT_RE_PREFIXES = ("results → ", "results -> ")
 
 
 def load_suite_config(path: str | Path) -> ExperimentSuiteConfig:
@@ -231,9 +230,8 @@ def summarize_suite_state(state: ExperimentSuiteState) -> dict[str, int | str | 
 
 def _result_path_from_output(lines: Iterable[str]) -> str | None:
     for line in reversed(list(lines)):
-        for prefix in _RESULT_RE_PREFIXES:
-            if line.startswith(prefix):
-                return line[len(prefix):].strip()
+        if line.startswith(RESULT_PATH_PREFIX):
+            return line[len(RESULT_PATH_PREFIX):].strip()
     return None
 
 

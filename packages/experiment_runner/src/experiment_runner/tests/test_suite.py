@@ -153,6 +153,18 @@ def test_suite_cancel_marks_state_for_cooperative_stop(tmp_path, capsys) -> None
     assert "cancel requested" in capsys.readouterr().out
 
 
+def test_result_path_from_output_parses_prefix_from_last_matching_line() -> None:
+    lines = [
+        "[1/2] q1: Question one?",
+        f"{suite.RESULT_PATH_PREFIX}/data/results/ace__solar__123.jsonl",
+    ]
+    assert suite._result_path_from_output(lines) == "/data/results/ace__solar__123.jsonl"
+
+
+def test_result_path_from_output_returns_none_when_prefix_absent() -> None:
+    assert suite._result_path_from_output(["no match here"]) is None
+
+
 def test_experiment_runner_parses_suite_subcommands() -> None:
     args = runner_main.parse_args(["suite", "run", "--config", "suite.json", "--state", "state.json"])
 
