@@ -53,6 +53,16 @@ class AnalysisResult(BaseModel):
     # The model used by the A2 examiner (may differ from the A1 model under test).
     examiner_model: str
 
+    # Optional suite/run context. Older analysis JSONL rows do not contain these.
+    analysis_run_name: Optional[str] = None
+    suite_id: Optional[str] = None
+    suite_name: Optional[str] = None
+    suite_config_path: Optional[str] = None
+    suite_state_path: Optional[str] = None
+
+    # Total wall-clock time spent producing this analysis result.
+    analysis_time_s: Optional[float] = Field(default=None, ge=0.0)
+
     # Per-claim verifications.
     claims: list[ClaimAnalysis] = Field(default_factory=list)
 

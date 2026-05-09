@@ -1,0 +1,89 @@
+@startuml
+title Result Processor - Analysis and Reporting Pipeline
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam activity {
+  BackgroundColor #F8F8F8
+  BorderColor #555555
+  DiamondBackgroundColor #FFF7E6
+  DiamondBorderColor #555555
+}
+
+start
+
+:Select experiment result JSONL files;
+
+note right
+  Alternative entry: **analysis-job run**
+  manages a persistent job with resumable
+  state tracking, cooperative cancellation,
+  and optional suite ID linkage
+  (analysis-job run / status / cancel).
+end note
+
+:Load already analyzed run IDs\nwhen resume mode is enabled;
+
+repeat
+  :Read next RunResult;
+
+  if (Run already analyzed?) then (yes)
+    :Skip cached run;
+  else (no)
+    :Record analysis start time;
+    :Take answer text;
+    :Strip reasoning blocks;
+    :Extract structured citations\n(statement, file, line range);
+    :Split remaining uncited sentences;
+
+    repeat
+      :Resolve cited file path\ninside selected corpus;
+      if (Reference resolves?) then (yes)
+        :Read cited excerpt\nand clamp line range;
+      else (no)
+        :Mark claim as BAD_REFERENCE;
+      endif
+
+      if (Excerpt available?) then (yes)
+        :Ask examiner LLM whether\nexcerpt supports the claim;
+        :Store claim verdict and justification;
+      endif
+    repeat while (More citations?) is (yes)
+
+    repeat
+      :Mark uncited sentence\nas BAD_REFERENCE;
+    repeat while (More uncited sentences?) is (yes)
+
+    :Summarize answer helpfulness\nfrom per-claim verdicts;
+    :Aggregate support rate,\nerror rate, overclaim rate,\nand final pass/fail verdict;
+    :Record analysis_time_s\n(wall-clock duration for this run);
+    :Attach suite_id, suite_name,\nanalysis_run_name metadata;
+    :Append AnalysisResult JSONL row;
+  endif
+repeat while (More runs?) is (yes)
+
+:Load runs and analyses for reporting;
+:Join records into analysis dataframe\n(includes execution_time_s, analysis_time_s,\nexaminer_model, suite linkage columns);
+:Generate plots and LaTeX tables;
+
+note right
+  19 chart types including timing charts:
+  analysis time by system / examiner,
+  analysis time vs claims / answer length,
+  execution time vs analysis time.
+end note
+
+:Serve Streamlit dashboard\n(7 tabs: Experiment suite, Run experiment,\nOverview, Runs, Charts, Run details, Actions)\nor export thesis artifacts;
+
+stop
+
+legend right
+  The processor separates two concerns:
+  claim-level citation support scoring,
+  and experiment-level reporting.
+  analysis_time_s enables cost modeling
+  of the examiner pipeline itself.
+endlegend
+
+@enduml

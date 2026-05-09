@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 
 import pandas as pd
 import pytest
 
+from experiment_runner.models.enums import Corpus, SystemName
+from experiment_runner.models.suite import ExperimentSuiteConfig, ExperimentSuiteState, SuiteCorpusSelection, SuiteTask
 from result_processor import main as result_main
 from result_processor.commands.analyze import run_analyze
 from result_processor.commands.dashboard import run_dashboard
 from result_processor.commands.visualize import run_visualize
-from result_processor.tests.conftest import run_payload, write_jsonl
+from result_processor.tests.conftest import analysis_result, run_payload, write_jsonl
 from result_processor.ui import streamlit_app as ui
 
 
@@ -28,6 +31,21 @@ def test_model_options_include_default_when_ollama_has_no_default(monkeypatch) -
     monkeypatch.setattr(ui, "_load_ollama_models", lambda: ["qwen3:14b"])
 
     assert ui._model_options() == ["qwen3:4b", "qwen3:14b"]
+
+
+def test_refresh_ollama_models_clears_cached_loader(monkeypatch) -> None:
+    calls: list[bool] = []
+
+    class Loader:
+        @staticmethod
+        def clear() -> None:
+            calls.append(True)
+
+    monkeypatch.setattr(ui, "_load_ollama_models", Loader)
+
+    ui._refresh_ollama_models()
+
+    assert calls == [True]
 
 
 def test_query_ollama_models_returns_empty_on_command_failure(monkeypatch) -> None:
@@ -87,6 +105,359 @@ def test_build_experiment_run_args_includes_selected_options(monkeypatch) -> Non
     ]
 
 
+def test_build_suite_run_and_cancel_args(monkeypatch) -> None:
+    monkeypatch.setattr(ui.sys, "executable", "/usr/bin/python")
+
+    assert ui._build_suite_run_args("suite.json", "suite.state.json") == [
+        "/usr/bin/python",
+        "-m",
+        "experiment_runner.main",
+        "suite",
+        "run",
+        "--config",
+        "suite.json",
+        "--state",
+        "suite.state.json",
+    ]
+    assert ui._build_suite_cancel_args("suite.state.json") == [
+        "/usr/bin/python",
+        "-m",
+        "experiment_runner.main",
+        "suite",
+        "cancel",
+        "--state",
+        "suite.state.json",
+    ]
+
+
+def test_build_analysis_job_run_and_cancel_args(monkeypatch) -> None:
+    monkeypatch.setattr(ui.sys, "executable", "/usr/bin/python")
+
+    assert ui._build_analysis_job_run_args("analysis.state.json") == [
+        "/usr/bin/python",
+        "-m",
+        "result_processor.main",
+        "analysis-job",
+        "run",
+        "--state",
+        "analysis.state.json",
+    ]
+    assert ui._build_analysis_job_cancel_args("analysis.state.json") == [
+        "/usr/bin/python",
+        "-m",
+        "result_processor.main",
+        "analysis-job",
+        "cancel",
+        "--state",
+        "analysis.state.json",
+    ]
+
+
+def test_suite_paths_use_slug_and_default_state_name(tmp_path) -> None:
+    config = ExperimentSuiteConfig(
+        name="Thesis Smoke Suite",
+        systems=[SystemName.ACE],
+        models=["qwen3:4b"],
+        corpora=[
+            SuiteCorpusSelection(
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="questions.json",
+                path_to_corpora="corpora",
+            )
+        ],
+    )
+
+    config_path, state_path, launcher_log_path = ui._suite_paths(tmp_path, config)
+
+    assert config_path == tmp_path / "thesis-smoke-suite.json"
+    assert state_path == tmp_path / "thesis-smoke-suite.state.json"
+    assert launcher_log_path == tmp_path / "thesis-smoke-suite.state.launcher.log"
+
+
+def test_analysis_job_paths_use_named_analysis_directory(tmp_path) -> None:
+    output_dir, state_path, log_path = ui._analysis_job_paths(tmp_path, "Qwen3 Suite Analysis")
+
+    assert output_dir == tmp_path / "qwen3-suite-analysis"
+    assert state_path == tmp_path / "qwen3-suite-analysis.state.json"
+    assert log_path == tmp_path / "qwen3-suite-analysis.log"
+
+
+def test_analysis_result_dirs_only_include_dirs_with_jsonl(tmp_path) -> None:
+    (tmp_path / "empty").mkdir()
+    (tmp_path / "with-results").mkdir()
+    (tmp_path / "with-results" / "run.jsonl").write_text("{}\n", encoding="utf-8")
+    (tmp_path / "top-level.jsonl").write_text("{}\n", encoding="utf-8")
+
+    assert ui._analysis_result_dirs(tmp_path) == [tmp_path / "with-results"]
+    assert ui._analysis_result_dirs(tmp_path / "missing") == []
+
+
+def test_result_files_for_analysis_dir_matches_by_jsonl_name(tmp_path) -> None:
+    analysis_dir = tmp_path / "analysis" / "suite-analysis"
+    experiment_dir = tmp_path / "experiment"
+    analysis_dir.mkdir(parents=True)
+    experiment_dir.mkdir()
+    (analysis_dir / "matched.jsonl").write_text("{}\n", encoding="utf-8")
+    (analysis_dir / "missing.jsonl").write_text("{}\n", encoding="utf-8")
+    (experiment_dir / "matched.jsonl").write_text("{}\n", encoding="utf-8")
+
+    matched, missing = ui._result_files_for_analysis_dir(analysis_dir, experiment_dir)
+
+    assert matched == [experiment_dir / "matched.jsonl"]
+    assert missing == [experiment_dir / "missing.jsonl"]
+
+
+def test_suggest_suite_name_uses_selected_dimensions() -> None:
+    name = ui._suggest_suite_name(
+        systems=[SystemName.ACE, SystemName.CLAWCODE],
+        models=["qwen3:8b"],
+        corpus_selections=[
+            SuiteCorpusSelection(
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="questions.json",
+                path_to_corpora="corpora",
+                levels=[2],
+            )
+        ],
+    )
+
+    assert name == "solar-system-wiki-l2-qwen3-8b-ace-clawcode"
+
+
+def test_suite_widget_state_from_config_includes_per_corpus_selection_fields() -> None:
+    config = ExperimentSuiteConfig(
+        name="saved suite",
+        systems=[SystemName.ACE, SystemName.CLAWCODE],
+        models=["qwen3:4b"],
+        corpora=[
+            SuiteCorpusSelection(
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="./corpora/questions/solar_system.json",
+                path_to_corpora="./corpora/scraped_data/solar_system_wiki",
+                levels=[2],
+                question_ids=["ss_L2_005"],
+            )
+        ],
+        output_dir="./data/experiment_results",
+        num_ctx=16384,
+        reasoning_enabled=True,
+        no_trace=True,
+    )
+
+    state = ui._suite_widget_state_from_config(config, ["qwen3:4b"])
+
+    assert state["suite_name_input"] == "saved suite"
+    assert state["suite_systems"] == [SystemName.ACE, SystemName.CLAWCODE]
+    assert state["suite_models"] == ["qwen3:4b"]
+    assert state["suite_corpora"] == ["solar_system_wiki"]
+    assert state["suite_qf_solar_system_wiki"] == "./corpora/questions/solar_system.json"
+    assert state["suite_corpora_solar_system_wiki"] == "./corpora/scraped_data/solar_system_wiki"
+    assert state["suite_levels_solar_system_wiki"] == [2]
+    assert state["suite_ids_solar_system_wiki"] == ["ss_L2_005"]
+    assert state["suite_num_ctx"] == 16384
+    assert state["suite_reasoning_enabled"] is True
+    assert state["suite_no_trace"] is True
+
+
+def test_copy_suite_config_creates_independent_suite_identity() -> None:
+    config = ExperimentSuiteConfig(
+        suite_id="original-id",
+        name="saved suite",
+        systems=[SystemName.ACE, SystemName.CLAWCODE],
+        models=["qwen3:4b"],
+        corpora=[
+            SuiteCorpusSelection(
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="./corpora/questions/solar_system.json",
+                path_to_corpora="./corpora/scraped_data/solar_system_wiki",
+                levels=[2],
+                question_ids=["ss_L2_005"],
+            )
+        ],
+        output_dir="./data/experiment_results",
+        num_ctx=16384,
+        reasoning_enabled=True,
+        no_trace=True,
+    )
+
+    copied = ui._copy_suite_config(config)
+
+    assert copied.suite_id != config.suite_id
+    assert copied.name == "saved-suite-copy"
+    assert copied.systems == config.systems
+    assert copied.models == config.models
+    assert copied.corpora == config.corpora
+    assert copied.output_dir == config.output_dir
+    assert copied.num_ctx == config.num_ctx
+    assert copied.reasoning_enabled == config.reasoning_enabled
+    assert copied.no_trace == config.no_trace
+
+
+def test_result_files_from_suite_states_returns_existing_result_paths(tmp_path) -> None:
+    existing = tmp_path / "result.jsonl"
+    existing.write_text("{}\n", encoding="utf-8")
+    missing = tmp_path / "missing.jsonl"
+    state = ExperimentSuiteState(
+        suite_id="suite-1",
+        suite_name="suite",
+        tasks=[
+            SuiteTask(
+                task_id="t1",
+                index=1,
+                system=SystemName.ACE,
+                model="qwen3:4b",
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="questions.json",
+                path_to_corpora="corpora",
+                question_id="ss_L1_001",
+                question_text="Question?",
+                level=1,
+                command=["python"],
+                result_path=str(existing),
+            ),
+            SuiteTask(
+                task_id="t2",
+                index=2,
+                system=SystemName.CLAWCODE,
+                model="qwen3:4b",
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="questions.json",
+                path_to_corpora="corpora",
+                question_id="ss_L1_001",
+                question_text="Question?",
+                level=1,
+                command=["python"],
+                result_path=str(missing),
+            ),
+        ],
+    )
+    state_path = tmp_path / "suite.state.json"
+    state_path.write_text(state.model_dump_json(), encoding="utf-8")
+
+    assert ui._result_files_from_suite_states([state_path]) == [str(existing.resolve())]
+
+
+def test_analysis_run_records_link_legacy_directory_by_suite_result_names(tmp_path) -> None:
+    result_path = tmp_path / "experiment" / "run.jsonl"
+    write_jsonl(result_path, [run_payload(run_id="r1")])
+    analysis_dir = tmp_path / "analysis" / "legacy-analysis"
+    write_jsonl(analysis_dir / "run.jsonl", [analysis_result(run_id="r1")])
+
+    state = ExperimentSuiteState(
+        suite_id="suite-1",
+        suite_name="suite",
+        config_path=str(tmp_path / "suite.json"),
+        tasks=[
+            SuiteTask(
+                task_id="t1",
+                index=1,
+                system=SystemName.ACE,
+                model="qwen3:4b",
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="questions.json",
+                path_to_corpora="corpora",
+                question_id="ss_L1_001",
+                question_text="Question?",
+                level=1,
+                command=["python"],
+                result_path=str(result_path),
+            )
+        ],
+    )
+    suite_dir = tmp_path / "suites"
+    suite_dir.mkdir()
+    state_path = suite_dir / "suite.state.json"
+    state_path.write_text(state.model_dump_json(), encoding="utf-8")
+    suite_records = ui._suite_records(suite_dir)
+
+    records = ui._analysis_run_records(tmp_path / "analysis", suite_records, tmp_path / "experiment")
+
+    assert len(records) == 1
+    assert records[0]["suite_key"] == str(state_path.resolve())
+    assert records[0]["suite_name"] == "suite"
+    assert records[0]["result_files"] == [result_path]
+
+
+def test_create_analysis_export_zip_includes_suite_analysis_and_charts(tmp_path) -> None:
+    result_path = tmp_path / "experiment" / "run.jsonl"
+    write_jsonl(result_path, [run_payload(run_id="r1")])
+    analysis_dir = tmp_path / "analysis" / "analysis-a"
+    write_jsonl(analysis_dir / "run.jsonl", [analysis_result(run_id="r1")])
+    config_path = tmp_path / "suite.json"
+    state_path = tmp_path / "suite.state.json"
+    config_path.write_text("{}\n", encoding="utf-8")
+    state_path.write_text("{}\n", encoding="utf-8")
+    suite_record = {
+        "suite_id": "suite-1",
+        "suite_name": "suite",
+        "state_path": state_path,
+        "config_path": config_path,
+    }
+    analysis_record = {
+        "analysis_name": "analysis-a",
+        "analysis_dir": analysis_dir,
+        "analysis_files": [analysis_dir / "run.jsonl"],
+        "result_files": [result_path],
+        "metadata": {},
+    }
+    analysis_df = ui._combined_analysis_dataframe([analysis_record])
+
+    zip_bytes = ui._create_analysis_export_zip(suite_record, [analysis_record], analysis_df)
+
+    import zipfile
+    from io import BytesIO
+    with zipfile.ZipFile(BytesIO(zip_bytes)) as zf:
+        names = set(zf.namelist())
+    assert "manifest.json" in names
+    assert "suite/suite.json" in names
+    assert "suite/suite.state.json" in names
+    assert "tables/analysis_results.csv" in names
+    assert "charts/time_vs_answer_chars.html" in names
+    assert "charts/error_rate_by_system.html" in names
+    assert "experiment_data/analysis-a/run.jsonl" in names
+    assert "analysis_results/analysis-a/run.jsonl" in names
+
+
+def test_run_id_from_result_path_reads_first_valid_jsonl_row(tmp_path) -> None:
+    path = tmp_path / "result.jsonl"
+    path.write_text("\n{bad json}\n" + json.dumps(run_payload(run_id="run-123")) + "\n", encoding="utf-8")
+
+    assert ui._run_id_from_result_path(str(path)) == "run-123"
+    assert ui._run_id_from_result_path(str(tmp_path / "missing.jsonl")) is None
+
+
+def test_dataframe_for_single_run_contains_detail_fields(tmp_path) -> None:
+    path = tmp_path / "result.jsonl"
+    path.write_text(json.dumps(run_payload(run_id="run-123")) + "\n", encoding="utf-8")
+    run = ui._run_from_result_path(str(path))
+
+    df = ui._dataframe_for_single_run(run)
+
+    assert df.loc[0, "run_id"] == "run-123"
+    assert df.loc[0, "system_name"] == "ace"
+    assert df.loc[0, "execution_time_s"] == 12.5
+    assert df.loc[0, "tool_call_count"] == 2
+
+
+def test_dataframe_for_single_run_contains_optional_corpus_snapshot_fields(tmp_path) -> None:
+    payload = run_payload(run_id="run-123")
+    payload["corpus_snapshot"] = {
+        "enabled": True,
+        "source_corpus_path": "/source",
+        "prepared_corpus_path": "/tmp/prepared",
+        "file_count": 3,
+        "total_bytes": 42,
+    }
+    path = tmp_path / "result.jsonl"
+    path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    run = ui._run_from_result_path(str(path))
+
+    df = ui._dataframe_for_single_run(run)
+
+    assert bool(df.loc[0, "corpus_snapshot_enabled"]) is True
+    assert df.loc[0, "corpus_snapshot_file_count"] == 3
+
+
 def test_shell_command_quotes_arguments() -> None:
     assert ui._shell_command(["python", "-m", "mod", "--output-dir", "path with space"]) == (
         "python -m mod --output-dir 'path with space'"
@@ -130,12 +501,16 @@ def test_parse_args_for_analyze_and_visualize() -> None:
         ["analyze", "--path-to-corpora", "corpora", "--input-files", "one.jsonl", "two.jsonl", "--no-resume"]
     )
     visualize = result_main.parse_args(["visualize", "--formats", "html", "svg"])
+    job = result_main.parse_args(["analysis-job", "run", "--state", "analysis.state.json"])
 
     assert analyze.command == "analyze"
     assert analyze.input_files == ["one.jsonl", "two.jsonl"]
     assert analyze.resume is False
     assert visualize.command == "visualize"
     assert visualize.formats == ["html", "svg"]
+    assert job.command == "analysis-job"
+    assert job.analysis_job_command == "run"
+    assert job.state == "analysis.state.json"
 
 
 def test_command_wrappers_delegate_to_pipelines(monkeypatch) -> None:

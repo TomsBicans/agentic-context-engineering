@@ -1,0 +1,61 @@
+@startuml
+title ACE Agent Runtime - Single Question Sequence
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam sequence {
+  ArrowColor #444444
+  LifeLineBorderColor #555555
+  LifeLineBackgroundColor #F8F8F8
+  ParticipantBorderColor #555555
+  ParticipantBackgroundColor #F8F8F8
+}
+
+actor User
+participant "CLI or\nExperiment Runner" as caller
+participant "ACE Agent\nLangGraph runtime" as agent
+participant "Ollama LLM\nChatOllama" as llm
+participant "Performer Tools\nread_lines, search,\nlist_paths, file_meta,\ntime_left" as tools
+database "Selected Corpus\ntext files" as corpus
+database "RunResult JSONL\nwhen executed in batch" as results
+
+User -> caller : Ask research question
+caller -> agent : initialize_agent(model,\nrole=examinee, corpus path)
+agent -> llm : System prompt with citation rules\nand tool-use requirements
+
+caller -> agent : Invoke or stream question
+activate agent
+
+loop Until final answer or time budget
+  agent -> llm : Provide conversation state
+  llm --> agent : Token stream or tool request
+
+  alt Tool request
+    agent -> tools : Execute corpus tool
+    tools -> corpus : Read or search corpus files
+    corpus --> tools : Matching paths, lines,\nor metadata
+    tools --> agent : Tool result
+    agent -> llm : Add tool result to context
+  else Final answer tokens
+    agent --> caller : Stream answer tokens
+  end
+end
+
+agent --> caller : Final answer with inline citations
+deactivate agent
+
+alt Experiment batch execution
+  caller -> caller : Count tool calls,\nmeasure time, collect trace
+  caller -> results : Append RunResult row
+else Interactive CLI execution
+  caller --> User : Render final answer
+end
+
+note right of agent
+  The examinee agent is instructed to cite every
+  factual claim using corpus-relative file paths
+  and half-open line ranges.
+end note
+
+@enduml

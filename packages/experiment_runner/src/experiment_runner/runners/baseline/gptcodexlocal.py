@@ -19,15 +19,6 @@ _TIMEOUT_SECONDS = 180
 # Ollama local provider identifier passed to the Codex CLI.
 _LOCAL_PROVIDER = "ollama"
 
-_CODEX_PROMPT_SUFFIX = """
-Codex runtime notes
-- For this run, the corpus is mounted at ./corpus (read-only sandbox).
-- Use the available file tools to read and search corpus files under ./corpus.
-- Do not attempt to write files or execute shell commands.
-- There is no time_left() tool; keep the search bounded and answer within the run budget.
-""".strip()
-
-
 class GptCodexLocalRunner(BaseRunner):
     """Runner for the OpenAI Codex CLI baseline against a local Ollama model.
 
@@ -38,7 +29,7 @@ class GptCodexLocalRunner(BaseRunner):
 
     The Codex CLI is invoked in read-only sandbox mode with a local Ollama
     provider, so the agent can read corpus files but cannot mutate the
-    workspace or reach the network:
+    workspace:
 
         codex exec --oss --local-provider ollama -m <model>
                    --sandbox read-only --skip-git-repo-check --json <prompt>
@@ -113,6 +104,7 @@ class GptCodexLocalRunner(BaseRunner):
 
         answer_text = self._extract_answer(events)
         tokens = self._extract_tokens(events)
+        tool_sequence = self._extract_tool_sequence(events)
 
         result.answer_text = answer_text
         if self.config.store_trace:
@@ -120,13 +112,15 @@ class GptCodexLocalRunner(BaseRunner):
         result.metrics = RunMetrics(
             execution_time_s=execution_time,
             tokens=tokens,
-            corpus_used=answer_text is not None,
+            tool_call_count=len(tool_sequence),
+            tool_call_sequence=tool_sequence,
+            corpus_used=len(tool_sequence) > 0,
         )
         return result
 
     @staticmethod
     def _build_prompt(question: str) -> str:
-        return f"{EXAMINEE_SYSTEM_MESSAGE}\n\n{_CODEX_PROMPT_SUFFIX}\n\nQuestion:\n{question}"
+        return f"{EXAMINEE_SYSTEM_MESSAGE}\n\nQuestion:\n{question}"
 
     def _invoke_codex(self, prompt: str, workspace: Path) -> subprocess.CompletedProcess:
         cmd = [
@@ -184,6 +178,22 @@ class GptCodexLocalRunner(BaseRunner):
             text = item.get("text")
             if item_type in ("reasoning", "agent_message") and isinstance(text, str):
                 steps.append(TraceStep(type=item_type, content=text.strip() or None))
+            elif GptCodexLocalRunner._is_tool_call_item_type(item_type):
+                steps.append(
+                    TraceStep(
+                        type="tool_call",
+                        name=GptCodexLocalRunner._tool_name(item),
+                        input=json.dumps(item, ensure_ascii=False),
+                    )
+                )
+            elif GptCodexLocalRunner._is_tool_result_item_type(item_type):
+                steps.append(
+                    TraceStep(
+                        type="tool_result",
+                        name=GptCodexLocalRunner._tool_name(item),
+                        output=json.dumps(item, ensure_ascii=False),
+                    )
+                )
         return steps
 
     @staticmethod
@@ -201,6 +211,50 @@ class GptCodexLocalRunner(BaseRunner):
                 if isinstance(text, str):
                     answer = text.strip() or None
         return answer
+
+    @staticmethod
+    def _extract_tool_sequence(events: list[dict[str, Any]]) -> list[str]:
+        """Return command/tool-like item names from the Codex JSONL event stream."""
+        sequence: list[str] = []
+        for event in events:
+            if event.get("type") != "item.completed":
+                continue
+            item = event.get("item")
+            if not isinstance(item, dict):
+                continue
+            item_type = item.get("type")
+            if not GptCodexLocalRunner._is_tool_call_item_type(item_type):
+                continue
+            sequence.append(GptCodexLocalRunner._tool_name(item))
+        return sequence
+
+    @staticmethod
+    def _is_tool_call_item_type(item_type: Any) -> bool:
+        if not isinstance(item_type, str):
+            return False
+        normalized = item_type.lower()
+        if normalized in {"reasoning", "agent_message", "message"}:
+            return False
+        if any(marker in normalized for marker in ("output", "result")):
+            return False
+        return any(marker in normalized for marker in ("tool", "call", "command", "exec", "shell"))
+
+    @staticmethod
+    def _is_tool_result_item_type(item_type: Any) -> bool:
+        if not isinstance(item_type, str):
+            return False
+        normalized = item_type.lower()
+        return any(marker in normalized for marker in ("tool_result", "tool_output", "call_output", "command_output"))
+
+    @staticmethod
+    def _tool_name(item: dict[str, Any]) -> str:
+        for key in ("name", "tool", "command", "cmd", "type"):
+            value = item.get(key)
+            if isinstance(value, str) and value:
+                return value
+            if isinstance(value, list) and value:
+                return " ".join(str(part) for part in value[:3])
+        return "codex_tool"
 
     @staticmethod
     def _extract_tokens(events: list[dict[str, Any]]) -> Optional[TokenCounts]:

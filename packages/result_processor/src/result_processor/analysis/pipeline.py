@@ -6,8 +6,9 @@ default — runs already present in the output are skipped.
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from experiment_runner.models.result import RunResult
 from rich.console import Console
@@ -44,6 +45,14 @@ def analyze_directory(
     num_ctx: int = 8192,
     input_files: Optional[Iterable[str]] = None,
     resume: bool = True,
+    progress_callback: Optional[Callable[[str, RunResult, Path, Optional[str]], None]] = None,
+    should_cancel: Optional[Callable[[], bool]] = None,
+    continue_on_error: bool = False,
+    analysis_run_name: Optional[str] = None,
+    suite_id: Optional[str] = None,
+    suite_name: Optional[str] = None,
+    suite_config_path: Optional[str] = None,
+    suite_state_path: Optional[str] = None,
 ) -> None:
     console = Console()
 
@@ -78,7 +87,11 @@ def analyze_directory(
 
         runs = list(iter_run_results(target))
         pending = [r for r in runs if r.run_id not in already_done]
+        skipped_runs = [r for r in runs if r.run_id in already_done]
         skipped = len(runs) - len(pending)
+        for run in skipped_runs:
+            if progress_callback:
+                progress_callback("skipped", run, target, None)
 
         console.print(
             f"  → {target.name}: {len(pending)} to analyze, {skipped} cached"
@@ -87,8 +100,32 @@ def analyze_directory(
             continue
 
         for run in tqdm(pending, desc=target.name, unit="run", leave=False):
-            analysis = _analyze_one(run, resolver, examiner, examiner_model)
-            append_analysis(out_path, analysis)
+            if should_cancel and should_cancel():
+                console.print("[yellow]Analysis cancelled.[/yellow]")
+                return
+            if progress_callback:
+                progress_callback("running", run, target, None)
+            try:
+                analysis = _analyze_one(
+                    run,
+                    resolver,
+                    examiner,
+                    examiner_model,
+                    analysis_run_name=analysis_run_name,
+                    suite_id=suite_id,
+                    suite_name=suite_name,
+                    suite_config_path=suite_config_path,
+                    suite_state_path=suite_state_path,
+                )
+                append_analysis(out_path, analysis)
+            except Exception as exc:
+                if progress_callback:
+                    progress_callback("failed", run, target, str(exc))
+                if continue_on_error:
+                    continue
+                raise
+            if progress_callback:
+                progress_callback("analyzed", run, target, None)
 
     console.print("[bold green]Analysis complete.[/bold green]")
 
@@ -98,7 +135,14 @@ def _analyze_one(
     resolver: ExcerptResolver,
     examiner: ExaminerLLM,
     examiner_model: str,
+    *,
+    analysis_run_name: Optional[str] = None,
+    suite_id: Optional[str] = None,
+    suite_name: Optional[str] = None,
+    suite_config_path: Optional[str] = None,
+    suite_state_path: Optional[str] = None,
 ) -> AnalysisResult:
+    started_at = time.perf_counter()
     answer = run.answer_text or ""
 
     citations = extract_citations(answer)
@@ -134,7 +178,21 @@ def _analyze_one(
         )
 
     helpfulness, notes = _summarize(run, examiner, claim_analyses)
-    return _aggregate(run, claim_analyses, len(uncited_sentences), examiner_model, helpfulness, notes)
+    analysis_time_s = time.perf_counter() - started_at
+    return _aggregate(
+        run,
+        claim_analyses,
+        len(uncited_sentences),
+        examiner_model,
+        helpfulness,
+        notes,
+        analysis_time_s=analysis_time_s,
+        analysis_run_name=analysis_run_name,
+        suite_id=suite_id,
+        suite_name=suite_name,
+        suite_config_path=suite_config_path,
+        suite_state_path=suite_state_path,
+    )
 
 
 def _to_claim_analysis(
@@ -179,6 +237,13 @@ def _aggregate(
     examiner_model: str,
     helpfulness: Optional[int],
     notes: str,
+    *,
+    analysis_time_s: Optional[float] = None,
+    analysis_run_name: Optional[str] = None,
+    suite_id: Optional[str] = None,
+    suite_name: Optional[str] = None,
+    suite_config_path: Optional[str] = None,
+    suite_state_path: Optional[str] = None,
 ) -> AnalysisResult:
     total = len(claims)
     supported = sum(1 for c in claims if c.status == ClaimStatus.SUPPORTED)
@@ -203,6 +268,12 @@ def _aggregate(
     return AnalysisResult(
         run_id=run.run_id,
         examiner_model=examiner_model,
+        analysis_run_name=analysis_run_name,
+        suite_id=suite_id,
+        suite_name=suite_name,
+        suite_config_path=suite_config_path,
+        suite_state_path=suite_state_path,
+        analysis_time_s=analysis_time_s,
         claims=claims,
         claims_total=total,
         claims_supported=supported,

@@ -2,6 +2,29 @@ include setup/*.mk
 
 PYTHON := python3
 
+# Documentation
+PLANTUML_VERSION := 1.2026.2
+PLANTUML_DIR := docs/diagrams
+PLANTUML_JAR := ${PLANTUML_DIR}/plantuml.jar
+PLANTUML_URL := https://github.com/plantuml/plantuml/releases/download/v${PLANTUML_VERSION}/plantuml-${PLANTUML_VERSION}.jar
+DIAGRAM_OUTPUT_DIR := ${PLANTUML_DIR}/generated
+
+diagrams:
+	@mkdir -p ${DIAGRAM_OUTPUT_DIR}/svg ${DIAGRAM_OUTPUT_DIR}/pdf
+	@command -v java >/dev/null || { echo "java is required to render PlantUML diagrams"; exit 1; }
+	@command -v rsvg-convert >/dev/null || { echo "rsvg-convert is required for PDF output — install with: sudo apt install librsvg2-bin"; exit 1; }
+	@if [ ! -f "${PLANTUML_JAR}" ]; then \
+		command -v curl >/dev/null || { echo "curl is required to download PlantUML"; exit 1; }; \
+		echo "Downloading PlantUML ${PLANTUML_VERSION}..."; \
+		curl -L --fail --show-error --output "${PLANTUML_JAR}" "${PLANTUML_URL}"; \
+	fi
+	@java -Djava.awt.headless=true -jar "${PLANTUML_JAR}" -tsvg -o generated/svg "${PLANTUML_DIR}"/*.puml
+	@for svg in ${DIAGRAM_OUTPUT_DIR}/svg/*.svg; do \
+		name=$$(basename "$$svg" .svg); \
+		rsvg-convert -f pdf -o "${DIAGRAM_OUTPUT_DIR}/pdf/$$name.pdf" "$$svg"; \
+	done
+	@echo "Generated diagrams in ${DIAGRAM_OUTPUT_DIR}"
+
 # Setup
 install_dependencies:
 	uv sync --all-packages --all-groups

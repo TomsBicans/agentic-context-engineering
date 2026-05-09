@@ -6,26 +6,51 @@ as the terminal / Makefile entry points.
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
 import shlex
 import subprocess
 import sys
+import uuid
+import zipfile
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-from experiment_runner.models.enums import AutomationLevel, SystemName
+from experiment_runner.commands.suite import (
+    build_suite_tasks,
+    load_suite_config,
+    load_suite_state,
+    save_suite_config,
+    summarize_suite_state,
+)
+from experiment_runner.models.enums import AutomationLevel, Corpus, SystemName
+from experiment_runner.models.result import RunResult
+from experiment_runner.models.suite import (
+    ExperimentSuiteConfig,
+    SuiteCorpusSelection,
+    SuiteTaskStatus,
+    default_state_path,
+    suite_slug,
+)
 from experiment_runner.runners.registry import DISABLED_SYSTEMS, SYSTEM_AUTOMATION_LEVELS
+from result_processor.commands.analysis_job import (
+    build_analysis_job_state,
+    load_analysis_job_state,
+    save_analysis_job_state,
+    summarize_analysis_job_state,
+)
+from result_processor.models.analysis_job import AnalysisTaskStatus
 from result_processor.visualization.loader import (
     build_dataframe,
+    build_dataframe_for_files,
     load_analyses,
     load_runs,
 )
 from result_processor.visualization.plots import ALL_PLOTS
-
 
 _AUTOMATION_BADGE: dict[AutomationLevel, str] = {
     AutomationLevel.FULL: "⚙ automated",
@@ -34,6 +59,9 @@ _AUTOMATION_BADGE: dict[AutomationLevel, str] = {
 }
 
 _ALL_SYSTEMS: list[SystemName] = [s for s in SYSTEM_AUTOMATION_LEVELS if s not in DISABLED_SYSTEMS]
+_AUTOMATED_SYSTEMS: list[SystemName] = [
+    s for s in _ALL_SYSTEMS if SYSTEM_AUTOMATION_LEVELS[s] == AutomationLevel.FULL
+]
 
 
 def _system_label(system: SystemName) -> str:
@@ -59,6 +87,7 @@ CORPUS_DEFAULTS: dict[str, tuple[str, str]] = {
 _PROGRESS_RE = re.compile(r"^\[(\d+)/(\d+)\]\s+(.+)$")
 _RESULT_RE = re.compile(r"^results\s*(?:→|->)\s*(.+)$")
 DEFAULT_MODEL = "qwen3:4b"
+DEFAULT_SUITE_DIR = Path("./data/experiment_suites")
 
 
 def _default_dir(env_key: str, fallback: str) -> str:
@@ -112,19 +141,19 @@ def _experiment_runner_cli() -> list[str]:
 
 
 def _build_experiment_run_args(
-    *,
-    system: str,
-    corpus: str,
-    questions_file: str,
-    output_dir: str,
-    model: str,
-    num_ctx: int,
-    path_to_corpora: str,
-    automation_level: str,
-    selected_ids: list[str],
-    reasoning_enabled: bool,
-    no_trace: bool,
-    dry_run: bool,
+        *,
+        system: str,
+        corpus: str,
+        questions_file: str,
+        output_dir: str,
+        model: str,
+        num_ctx: int,
+        path_to_corpora: str,
+        automation_level: str,
+        selected_ids: list[str],
+        reasoning_enabled: bool,
+        no_trace: bool,
+        dry_run: bool,
 ) -> list[str]:
     args = _experiment_runner_cli() + [
         "run",
@@ -147,6 +176,34 @@ def _build_experiment_run_args(
     if dry_run:
         args.append("--dry-run")
     return args
+
+
+def _build_suite_run_args(config_path: str, state_path: str) -> list[str]:
+    return _experiment_runner_cli() + [
+        "suite",
+        "run",
+        "--config",
+        config_path,
+        "--state",
+        state_path,
+    ]
+
+
+def _build_suite_cancel_args(state_path: str) -> list[str]:
+    return _experiment_runner_cli() + [
+        "suite",
+        "cancel",
+        "--state",
+        state_path,
+    ]
+
+
+def _build_analysis_job_run_args(state_path: str) -> list[str]:
+    return _cli_path() + ["analysis-job", "run", "--state", state_path]
+
+
+def _build_analysis_job_cancel_args(state_path: str) -> list[str]:
+    return _cli_path() + ["analysis-job", "cancel", "--state", state_path]
 
 
 def _shell_command(args: list[str]) -> str:
@@ -187,6 +244,10 @@ def _query_ollama_models() -> list[str]:
 _load_ollama_models = st.cache_data(show_spinner=False, ttl=60)(_query_ollama_models)
 
 
+def _refresh_ollama_models() -> None:
+    _load_ollama_models.clear()
+
+
 def _model_options(default: str = DEFAULT_MODEL) -> list[str]:
     models = _load_ollama_models()
     if default not in models:
@@ -198,6 +259,12 @@ def _select_model(label: str, default: str = DEFAULT_MODEL, *, key: str) -> str:
     options = _model_options(default)
     index = options.index(default) if default in options else 0
     return st.selectbox(label, options, index=index, key=key)
+
+
+def _render_model_refresh_button(*, key: str, width: str = "stretch") -> None:
+    if st.button("🔄 Refresh models", key=key, width=width):
+        _refresh_ollama_models()
+        st.rerun()
 
 
 def _render_run_errors(result_path: str) -> None:
@@ -234,9 +301,9 @@ def _render_run_errors(result_path: str) -> None:
 
 
 def _run_experiment_subprocess(
-    args: list[str],
-    expected_total: int,
-    status_label: str = "Running experiment",
+        args: list[str],
+        expected_total: int,
+        status_label: str = "Running experiment",
 ) -> tuple[int, str | None]:
     """Run experiment-runner with a live progress bar driven by `[i/total]` lines.
 
@@ -305,6 +372,22 @@ def _run_experiment_subprocess(
         return rc, result_path
 
 
+def _start_background_subprocess(args: list[str], log_path: Path) -> int:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log = log_path.open("a", encoding="utf-8")
+    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+    process = subprocess.Popen(
+        args,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        text=True,
+        env=env,
+        start_new_session=True,
+    )
+    log.close()
+    return process.pid
+
+
 def _sidebar() -> dict:
     st.sidebar.header("Configuration")
     experiment_dir = st.sidebar.text_input(
@@ -314,6 +397,10 @@ def _sidebar() -> dict:
     analysis_dir = st.sidebar.text_input(
         "analysis_results_dir",
         value=_default_dir("RP_ANALYSIS_RESULTS_DIR", "./data/analysis_results"),
+    )
+    suite_dir = st.sidebar.text_input(
+        "experiment_suites_dir",
+        value=str(DEFAULT_SUITE_DIR),
     )
     corpora_root = st.sidebar.text_input(
         "path_to_corpora",
@@ -327,6 +414,9 @@ def _sidebar() -> dict:
         index=default_model_index,
         key="examiner_model",
     )
+    if st.sidebar.button("🔄 Refresh models", key="refresh_sidebar_models", width="stretch"):
+        _refresh_ollama_models()
+        st.rerun()
     num_ctx = st.sidebar.number_input("num_ctx", min_value=1024, max_value=131072, value=8192, step=1024)
 
     if st.sidebar.button("🔄 Refresh data", width="stretch"):
@@ -336,6 +426,7 @@ def _sidebar() -> dict:
     return {
         "experiment_dir": Path(experiment_dir),
         "analysis_dir": Path(analysis_dir),
+        "suite_dir": Path(suite_dir),
         "corpora_root": corpora_root,
         "examiner_model": examiner_model,
         "num_ctx": int(num_ctx),
@@ -489,7 +580,7 @@ def _tab_charts(df: pd.DataFrame) -> None:
     plot_names = list(ALL_PLOTS.keys())
     selected = st.multiselect("Charts to show", plot_names, default=plot_names[:4])
     for name in selected:
-        st.plotly_chart(ALL_PLOTS[name](df), width="stretch")
+        st.plotly_chart(ALL_PLOTS[name](df), width="stretch", key=f"charts_tab_{name}")
 
 
 def _render_trace_steps(run) -> None:
@@ -515,6 +606,43 @@ def _render_trace_steps(run) -> None:
                     st.write(step.content or "")
 
 
+def _render_corpus_snapshot(run) -> None:
+    if run is None or run.corpus_snapshot is None:
+        return
+
+    snapshot = run.corpus_snapshot
+    with st.expander("Corpus snapshot", expanded=False):
+        cols = st.columns(4)
+        cols[0].metric("Files", snapshot.file_count)
+        cols[1].metric("Size", f"{snapshot.total_bytes / 1024:.1f} KiB")
+        cols[2].metric(
+            "Manifest rows",
+            snapshot.manifest_entry_count if snapshot.manifest_entry_count is not None else "—",
+        )
+        cols[3].metric("Copied paths", len(snapshot.copied_paths))
+        st.caption(f"Source: `{snapshot.source_corpus_path}`")
+        st.caption(f"Prepared: `{snapshot.prepared_corpus_path}`")
+        if snapshot.temp_root_path:
+            fs_label = f" ({snapshot.temp_root_filesystem})" if snapshot.temp_root_filesystem else ""
+            st.caption(f"Temporary root: `{snapshot.temp_root_path}`{fs_label}")
+
+        if snapshot.error:
+            st.warning(snapshot.error)
+        if snapshot.config_json:
+            with st.expander("config.json", expanded=False):
+                st.json(snapshot.config_json)
+        if snapshot.copied_paths:
+            st.markdown("**Copied paths**")
+            st.code("\n".join(snapshot.copied_paths), language="text")
+        cols = st.columns(2)
+        if snapshot.pre_run_tree:
+            cols[0].markdown("**Before run**")
+            cols[0].code(snapshot.pre_run_tree, language="text")
+        if snapshot.post_run_tree:
+            cols[1].markdown("**After run**")
+            cols[1].code(snapshot.post_run_tree, language="text")
+
+
 def _render_run_details(df: pd.DataFrame, analyses, runs, run_id: str) -> None:
     st.subheader("Run details")
     if df.empty:
@@ -524,17 +652,26 @@ def _render_run_details(df: pd.DataFrame, analyses, runs, run_id: str) -> None:
     row = df[df["run_id"] == run_id].iloc[0]
     run = next((r for r in runs if r.run_id == run_id), None)
 
-    cols = st.columns(4)
+    runtime = row.get("execution_time_s")
+    runtime_label = f"{runtime:.2f}s" if pd.notna(runtime) else "—"
+    tool_calls = row.get("tool_call_count")
+    tool_calls_label = int(tool_calls) if pd.notna(tool_calls) else "—"
+
+    cols = st.columns(6)
     cols[0].metric("System", row["system_name"])
     cols[1].metric("Corpus", row["corpus"])
     cols[2].metric("Level", row["level"] if pd.notna(row["level"]) else "—")
-    cols[3].metric("Run date", _format_run_date(row.get("created_at")))
+    cols[3].metric("Model", row.get("model", "—"))
+    cols[4].metric("Runtime", runtime_label)
+    cols[5].metric("Tool calls", tool_calls_label)
+    st.caption(f"Run date: {_format_run_date(row.get('created_at'))}")
 
     st.markdown(f"**Question:** {row['question_text']}")
     with st.expander("Answer", expanded=True):
         st.write(row["answer_text"] or "(empty)")
 
     _render_trace_steps(run)
+    _render_corpus_snapshot(run)
 
     analysis = analyses.get(run_id)
     if analysis is None:
@@ -606,6 +743,963 @@ def _load_question_meta(questions_file: str) -> tuple[list[str], dict[str, str]]
         ids.append(qid)
         meta[qid] = q.get("question", "")
     return ids, meta
+
+
+def _load_question_rows(questions_file: str) -> list[dict]:
+    path = Path(questions_file)
+    if not path.is_file():
+        return []
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    return [row for row in raw if row.get("id")]
+
+
+def _suite_config_paths(suite_dir: Path) -> list[Path]:
+    if not suite_dir.exists():
+        return []
+    return sorted(p for p in suite_dir.glob("*.json") if not p.name.endswith(".state.json"))
+
+
+def _suite_state_paths(suite_dir: Path) -> list[Path]:
+    if not suite_dir.exists():
+        return []
+    return sorted(p for p in suite_dir.glob("*.state.json"))
+
+
+def _suite_paths(suite_dir: Path, config: ExperimentSuiteConfig) -> tuple[Path, Path, Path]:
+    config_path = suite_dir / f"{suite_slug(config.name)}.json"
+    state_path = default_state_path(config_path, config)
+    launcher_log_path = state_path.with_suffix(".launcher.log")
+    return config_path, state_path, launcher_log_path
+
+
+def _result_files_from_suite_states(state_paths: list[Path]) -> list[str]:
+    paths: set[str] = set()
+    for state_path in state_paths:
+        try:
+            state = load_suite_state(state_path)
+        except Exception:
+            continue
+        for task in state.tasks:
+            if task.result_path and Path(task.result_path).is_file():
+                paths.add(str(Path(task.result_path).resolve()))
+    return sorted(paths)
+
+
+def _suite_records(suite_dir: Path) -> list[dict]:
+    records: list[dict] = []
+    for state_path in _suite_state_paths(suite_dir):
+        try:
+            state = load_suite_state(state_path)
+        except Exception:
+            continue
+        config_path = state.config_path or str(state_path.with_suffix("").with_suffix(".json"))
+        result_files = [
+            str(Path(task.result_path).resolve())
+            for task in state.tasks
+            if task.result_path and Path(task.result_path).is_file()
+        ]
+        records.append({
+            "suite_key": str(state_path.resolve()),
+            "suite_id": state.suite_id,
+            "suite_name": state.suite_name,
+            "state_path": state_path.resolve(),
+            "config_path": Path(config_path).resolve(),
+            "result_files": sorted(set(result_files)),
+        })
+    return sorted(records, key=lambda row: row["suite_name"])
+
+
+def _read_analysis_metadata(analysis_dir: Path) -> dict | None:
+    path = analysis_dir / "analysis.meta.json"
+    if not path.is_file():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    return raw if isinstance(raw, dict) else None
+
+
+def _analysis_run_records(analysis_root: Path, suite_records: list[dict], experiment_dir: Path) -> list[dict]:
+    suite_by_state = {record["suite_key"]: record for record in suite_records}
+    suite_by_result_name: dict[str, dict] = {}
+    for record in suite_records:
+        for result_file in record["result_files"]:
+            suite_by_result_name[Path(result_file).name] = record
+
+    records: list[dict] = []
+    for analysis_dir in _analysis_result_dirs(analysis_root):
+        analysis_files = sorted(analysis_dir.glob("*.jsonl"))
+        metadata = _read_analysis_metadata(analysis_dir)
+        linked_suite = None
+        if metadata and metadata.get("suite_state_path"):
+            linked_suite = suite_by_state.get(str(Path(metadata["suite_state_path"]).resolve()))
+        if linked_suite is None:
+            matches = [
+                suite_by_result_name[file.name]
+                for file in analysis_files
+                if file.name in suite_by_result_name
+            ]
+            unique_keys = {match["suite_key"] for match in matches}
+            if len(unique_keys) == 1:
+                linked_suite = matches[0]
+        result_files, missing_files = _result_files_for_analysis_dir(analysis_dir, experiment_dir)
+        if metadata and metadata.get("input_files"):
+            result_files = [Path(p) for p in metadata["input_files"] if Path(p).is_file()]
+        elif linked_suite:
+            analysis_names = {file.name for file in analysis_files}
+            result_files = [
+                Path(path) for path in linked_suite["result_files"]
+                if Path(path).name in analysis_names and Path(path).is_file()
+            ]
+        records.append({
+            "analysis_name": metadata.get("analysis_name") if metadata else analysis_dir.name,
+            "analysis_dir": analysis_dir.resolve(),
+            "analysis_files": analysis_files,
+            "result_files": result_files,
+            "missing_files": missing_files,
+            "metadata": metadata or {},
+            "suite_key": linked_suite["suite_key"] if linked_suite else None,
+            "suite_id": linked_suite["suite_id"] if linked_suite else metadata.get("suite_id") if metadata else None,
+            "suite_name": linked_suite["suite_name"] if linked_suite else metadata.get(
+                "suite_name") if metadata else None,
+            "suite_state_path": linked_suite["state_path"] if linked_suite else None,
+            "suite_config_path": linked_suite["config_path"] if linked_suite else None,
+        })
+    return sorted(records, key=lambda row: (row["suite_name"] or "", row["analysis_name"]))
+
+
+def _analysis_runs_dataframe(records: list[dict]) -> pd.DataFrame:
+    rows = []
+    for index, record in enumerate(records):
+        analysis_df = build_dataframe_for_files(record["result_files"], record["analysis_dir"]) if record[
+            "result_files"] else pd.DataFrame()
+        analyzed = int(analysis_df["support_rate"].notna().sum()) if "support_rate" in analysis_df else 0
+        rows.append({
+            "index": index,
+            "analysis_name": record["analysis_name"],
+            "suite_name": record.get("suite_name"),
+            "examiner_model": record["metadata"].get("examiner_model"),
+            "created_at": record["metadata"].get("created_at"),
+            "result_files": len(record["result_files"]),
+            "analyzed": analyzed,
+            "analysis_dir": str(record["analysis_dir"]),
+        })
+    return pd.DataFrame(rows)
+
+
+def _combined_analysis_dataframe(records: list[dict]) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    for record in records:
+        if not record["result_files"]:
+            continue
+        frame = build_dataframe_for_files(record["result_files"], record["analysis_dir"])
+        if frame.empty:
+            continue
+        frame["analysis_name"] = record["analysis_name"]
+        frame["analysis_dir"] = str(record["analysis_dir"])
+        frames.append(frame)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def _create_analysis_export_zip(suite_record: dict, analysis_records: list[dict], analysis_df: pd.DataFrame) -> bytes:
+    manifest = {
+        "suite": {
+            "suite_id": suite_record["suite_id"],
+            "suite_name": suite_record["suite_name"],
+            "state_path": str(suite_record["state_path"]),
+            "config_path": str(suite_record["config_path"]),
+        },
+        "analyses": [
+            {
+                "analysis_name": record["analysis_name"],
+                "analysis_dir": str(record["analysis_dir"]),
+                "metadata": record["metadata"],
+                "result_files": [str(path) for path in record["result_files"]],
+                "analysis_files": [str(path) for path in record["analysis_files"]],
+            }
+            for record in analysis_records
+        ],
+    }
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("manifest.json", json.dumps(manifest, indent=2) + "\n")
+        if suite_record["config_path"].is_file():
+            zf.write(suite_record["config_path"], f"suite/{suite_record['config_path'].name}")
+        if suite_record["state_path"].is_file():
+            zf.write(suite_record["state_path"], f"suite/{suite_record['state_path'].name}")
+        if not analysis_df.empty:
+            zf.writestr("tables/analysis_results.csv", analysis_df.to_csv(index=False))
+            for name, builder in ALL_PLOTS.items():
+                try:
+                    zf.writestr(f"charts/{name}.html", builder(analysis_df).to_html(include_plotlyjs="cdn"))
+                except Exception:
+                    continue
+        for record in analysis_records:
+            prefix = suite_slug(record["analysis_name"])
+            for path in record["result_files"]:
+                if Path(path).is_file():
+                    zf.write(path, f"experiment_data/{prefix}/{Path(path).name}")
+            for path in record["analysis_files"]:
+                if path.is_file():
+                    zf.write(path, f"analysis_results/{prefix}/{path.name}")
+            meta_path = record["analysis_dir"] / "analysis.meta.json"
+            if meta_path.is_file():
+                zf.write(meta_path, f"analysis_results/{prefix}/analysis.meta.json")
+    return buffer.getvalue()
+
+
+def _analysis_job_paths(analysis_root: Path, analysis_name: str) -> tuple[Path, Path, Path]:
+    slug = suite_slug(analysis_name)
+    output_dir = analysis_root / slug
+    state_path = analysis_root / f"{slug}.state.json"
+    log_path = analysis_root / f"{slug}.log"
+    return output_dir, state_path, log_path
+
+
+def _analysis_result_dirs(analysis_root: Path) -> list[Path]:
+    if not analysis_root.exists():
+        return []
+    return sorted(
+        path
+        for path in analysis_root.iterdir()
+        if path.is_dir() and any(path.glob("*.jsonl"))
+    )
+
+
+def _result_files_for_analysis_dir(analysis_dir: Path, experiment_dir: Path) -> tuple[list[Path], list[Path]]:
+    result_files: list[Path] = []
+    missing_files: list[Path] = []
+    for analysis_file in sorted(analysis_dir.glob("*.jsonl")):
+        result_file = experiment_dir / analysis_file.name
+        if result_file.is_file():
+            result_files.append(result_file)
+        else:
+            missing_files.append(result_file)
+    return result_files, missing_files
+
+
+def _analysis_job_state_dataframe(state_path: Path) -> tuple[dict, pd.DataFrame]:
+    if not state_path.is_file():
+        return {}, pd.DataFrame()
+    state = load_analysis_job_state(state_path)
+    summary = summarize_analysis_job_state(state)
+    rows = [
+        {
+            "run_id": task.run_id,
+            "status": task.status.value,
+            "source_file": task.source_file,
+            "output_file": task.output_file,
+            "error": task.error,
+        }
+        for task in state.tasks
+    ]
+    return summary, pd.DataFrame(rows)
+
+
+def _render_analysis_job_progress(
+        state_path: Path,
+        result_files: list[str],
+        analysis_output_dir: Path,
+        analyses,
+        runs,
+) -> pd.DataFrame:
+    summary, tasks_df = _analysis_job_state_dataframe(state_path)
+    if not summary:
+        st.info("No persisted analysis job state yet.")
+        return pd.DataFrame()
+
+    total = int(summary["total"])
+    completed = int(summary["completed"])
+    st.progress(completed / total if total else 0.0, text=f"{completed}/{total} run(s) completed")
+
+    cols = st.columns(6)
+    cols[0].metric("Total", total)
+    cols[1].metric("Analyzed", summary[AnalysisTaskStatus.ANALYZED.value])
+    cols[2].metric("Skipped", summary[AnalysisTaskStatus.SKIPPED.value])
+    cols[3].metric("Failed", summary[AnalysisTaskStatus.FAILED.value])
+    cols[4].metric("Running", summary[AnalysisTaskStatus.RUNNING.value])
+    cols[5].metric("Pending", summary[AnalysisTaskStatus.PENDING.value])
+
+    if summary["cancel_requested"]:
+        st.warning("Cancellation has been requested. The analysis job stops before starting the next run.")
+
+    selected_df = build_dataframe_for_files([Path(p) for p in result_files],
+                                            analysis_output_dir) if result_files else pd.DataFrame()
+    if not tasks_df.empty:
+        event = st.dataframe(
+            tasks_df,
+            width="stretch",
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="analysis_job_tasks_table",
+        )
+        selected_rows = event.selection.rows if event.selection else []
+        if selected_rows:
+            run_id = tasks_df.iloc[selected_rows[0]]["run_id"]
+            detail_df = selected_df if not selected_df.empty else df_from_runs_by_id(runs, run_id)
+            if not detail_df.empty and run_id in set(detail_df["run_id"]):
+                st.divider()
+                _render_run_details(detail_df, load_analyses(analysis_output_dir), runs, run_id)
+            else:
+                st.info("Selected run details are not available yet.")
+    return selected_df
+
+
+def _render_existing_analysis_results(cfg: dict, runs) -> None:
+    st.markdown("### Existing analysis results")
+    analysis_dirs = _analysis_result_dirs(cfg["analysis_dir"])
+    if not analysis_dirs:
+        st.info("No existing analysis result directories found.")
+        return
+
+    selected_dir = st.selectbox(
+        "Analysis result directory",
+        analysis_dirs,
+        format_func=lambda p: p.name,
+        key="existing_analysis_result_dir",
+    )
+    if selected_dir is None:
+        return
+
+    result_files, missing_files = _result_files_for_analysis_dir(selected_dir, cfg["experiment_dir"])
+    analysis_files = sorted(selected_dir.glob("*.jsonl"))
+    st.caption(f"Selected analysis output: `{selected_dir}`")
+    cols = st.columns(3)
+    cols[0].metric("Analysis files", len(analysis_files))
+    cols[1].metric("Matched result files", len(result_files))
+    cols[2].metric("Missing result files", len(missing_files))
+
+    if missing_files:
+        with st.expander("Missing experiment result files", expanded=False):
+            st.code("\n".join(str(path) for path in missing_files), language="text")
+    if not result_files:
+        st.warning("No matching experiment result files were found for this analysis directory.")
+        return
+
+    analysis_df = build_dataframe_for_files(result_files, selected_dir)
+    analyses_for_dir = load_analyses(selected_dir)
+    analyzed_count = int(analysis_df["support_rate"].notna().sum()) if "support_rate" in analysis_df else 0
+    mean_support = analysis_df["support_rate"].dropna().mean() if "support_rate" in analysis_df else None
+
+    cols = st.columns(4)
+    cols[0].metric("Runs", len(analysis_df))
+    cols[1].metric("Analyzed", analyzed_count)
+    cols[2].metric("Systems", analysis_df["system_name"].nunique() if "system_name" in analysis_df else 0)
+    cols[3].metric(
+        "Mean support",
+        f"{mean_support:.2f}" if mean_support is not None and not pd.isna(mean_support) else "—",
+    )
+
+    table_cols = [
+        col
+        for col in [
+            "run_date",
+            "system_name",
+            "corpus",
+            "level",
+            "question_id",
+            "model",
+            "verdict",
+            "support_rate",
+            "helpfulness_rating",
+            "execution_time_s",
+            "tool_call_count",
+            "run_id",
+        ]
+        if col in analysis_df.columns
+    ]
+    event = st.dataframe(
+        analysis_df[table_cols],
+        width="stretch",
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="existing_analysis_results_table",
+    )
+    selected_rows = event.selection.rows if event.selection else []
+    if selected_rows:
+        run_id = analysis_df.iloc[selected_rows[0]]["run_id"]
+        st.divider()
+        _render_run_details(analysis_df, analyses_for_dir, runs, run_id)
+
+    _render_inline_analysis_charts(analysis_df, key="existing_analysis_inline_charts")
+
+
+def _render_suite_centric_analysis_results(cfg: dict, runs) -> None:
+    st.markdown("### Existing analysis results")
+    suite_records = _suite_records(cfg["suite_dir"])
+    if not suite_records:
+        st.info("No experiment suite states found yet.")
+        return
+
+    analysis_records = _analysis_run_records(cfg["analysis_dir"], suite_records, cfg["experiment_dir"])
+    selected_suite = st.selectbox(
+        "Experiment suite",
+        suite_records,
+        format_func=lambda record: record["suite_name"],
+        key="analysis_suite_selector",
+    )
+    suite_analysis_records = [
+        record for record in analysis_records
+        if record.get("suite_key") == selected_suite["suite_key"]
+    ]
+    st.caption(f"Suite state: `{selected_suite['state_path']}`")
+    st.caption(f"{len(suite_analysis_records)} analysis result(s) linked to this suite.")
+    if not suite_analysis_records:
+        st.info("No analysis results are linked to the selected suite yet.")
+        return
+
+    runs_df = _analysis_runs_dataframe(suite_analysis_records)
+    event = st.dataframe(
+        runs_df,
+        width="stretch",
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="multi-row",
+        key="suite_analysis_runs_table",
+    )
+    selected_rows = event.selection.rows if event.selection else []
+    selected_records = [
+        suite_analysis_records[int(runs_df.iloc[row]["index"])]
+        for row in selected_rows
+    ] if selected_rows else suite_analysis_records[:1]
+
+    analysis_df = _combined_analysis_dataframe(selected_records)
+    cols = st.columns(4)
+    analyzed_count = int(analysis_df["support_rate"].notna().sum()) if "support_rate" in analysis_df else 0
+    mean_support = analysis_df["support_rate"].dropna().mean() if "support_rate" in analysis_df else None
+    cols[0].metric("Selected analyses", len(selected_records))
+    cols[1].metric("Runs", len(analysis_df))
+    cols[2].metric("Analyzed", analyzed_count)
+    cols[3].metric(
+        "Mean support",
+        f"{mean_support:.2f}" if mean_support is not None and not pd.isna(mean_support) else "—",
+    )
+
+    table_cols = [
+        col for col in [
+            "analysis_name",
+            "run_date",
+            "system_name",
+            "corpus",
+            "level",
+            "question_id",
+            "model",
+            "verdict",
+            "support_rate",
+            "helpfulness_rating",
+            "execution_time_s",
+            "tool_call_count",
+            "run_id",
+        ] if col in analysis_df.columns
+    ]
+    if not analysis_df.empty:
+        event = st.dataframe(
+            analysis_df[table_cols],
+            width="stretch",
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="suite_analysis_results_table",
+        )
+        selected_result_rows = event.selection.rows if event.selection else []
+        if selected_result_rows:
+            row = analysis_df.iloc[selected_result_rows[0]]
+            analysis_dir = Path(row["analysis_dir"])
+            st.divider()
+            _render_run_details(analysis_df, load_analyses(analysis_dir), runs, row["run_id"])
+
+    if selected_records and not analysis_df.empty:
+        zip_bytes = _create_analysis_export_zip(selected_suite, selected_records, analysis_df)
+        st.download_button(
+            "Export selected",
+            data=zip_bytes,
+            file_name=f"{suite_slug(selected_suite['suite_name'])}-analysis-export.zip",
+            mime="application/zip",
+            width="stretch",
+        )
+    _render_inline_analysis_charts(analysis_df, key="suite_centric_analysis_charts")
+
+    unlinked = [record for record in analysis_records if record.get("suite_key") is None]
+    with st.expander(f"Advanced: flat analysis directory browser ({len(unlinked)} unlinked)", expanded=False):
+        _render_existing_analysis_results(cfg, runs)
+
+
+def df_from_runs_by_id(runs, run_id: str) -> pd.DataFrame:
+    run = next((r for r in runs if r.run_id == run_id), None)
+    return _dataframe_for_single_run(run) if run else pd.DataFrame()
+
+
+def _render_inline_analysis_charts(analysis_df: pd.DataFrame, key: str = "analysis_inline_charts") -> None:
+    st.markdown("### Analysis charts")
+    if analysis_df.empty or analysis_df.get("support_rate", pd.Series(dtype=float)).dropna().empty:
+        st.info("No analyzed metrics available for charts yet.")
+        return
+    names = list(ALL_PLOTS.keys())
+    selected = st.multiselect(
+        "Charts",
+        names,
+        default=[],
+        key=key,
+    )
+    for name in selected:
+        st.plotly_chart(ALL_PLOTS[name](analysis_df), width="stretch", key=f"{key}_{name}")
+
+
+def _run_id_from_result_path(result_path: str | None) -> str | None:
+    run = _run_from_result_path(result_path)
+    return run.run_id if run else None
+
+
+def _run_from_result_path(result_path: str | None) -> RunResult | None:
+    if not result_path:
+        return None
+    path = Path(result_path)
+    if not path.is_file():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    return RunResult.model_validate_json(line)
+                except Exception:
+                    continue
+    except OSError:
+        return None
+    return None
+
+
+def _dataframe_for_single_run(run: RunResult) -> pd.DataFrame:
+    tokens_total = (
+        run.metrics.tokens.total
+        if run.metrics and run.metrics.tokens
+        else None
+    )
+    return pd.DataFrame.from_records([
+        {
+            "run_id": run.run_id,
+            "created_at": run.created_at,
+            "run_date": run.created_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "system_name": run.system_name.value,
+            "corpus": run.corpus.value,
+            "model": run.model,
+            "reasoning_enabled": run.reasoning_enabled,
+            "question_id": run.question_id,
+            "question_text": run.question_text,
+            "level": _parse_question_level(run.question_id),
+            "automation_level": run.automation_level.value,
+            "answer_text": run.answer_text,
+            "execution_time_s": run.metrics.execution_time_s if run.metrics else None,
+            "step_count": run.metrics.step_count if run.metrics else None,
+            "tool_call_count": run.metrics.tool_call_count if run.metrics else None,
+            "tokens_total": tokens_total,
+            "corpus_used": run.metrics.corpus_used if run.metrics else None,
+            "corpus_snapshot_enabled": run.corpus_snapshot.enabled if run.corpus_snapshot else False,
+            "corpus_snapshot_file_count": run.corpus_snapshot.file_count if run.corpus_snapshot else None,
+        }
+    ])
+
+
+def _parse_question_level(question_id: str) -> int | None:
+    match = re.search(r"_L(\d+)_", question_id or "")
+    return int(match.group(1)) if match else None
+
+
+def _suite_state_dataframe(state_path: Path) -> tuple[dict, pd.DataFrame]:
+    if not state_path.is_file():
+        return {}, pd.DataFrame()
+    state = load_suite_state(state_path)
+    summary = summarize_suite_state(state)
+    rows = [
+        {
+            "index": task.index,
+            "status": task.status.value,
+            "model": task.model,
+            "corpus": task.corpus.value,
+            "level": task.level,
+            "question_id": task.question_id,
+            "system": task.system.value,
+            "result_path": task.result_path,
+            "run_id": _run_id_from_result_path(task.result_path),
+            "return_code": task.return_code,
+            "error": task.error,
+        }
+        for task in state.tasks
+    ]
+    return summary, pd.DataFrame(rows)
+
+
+def _render_suite_progress(state_path: Path, df: pd.DataFrame, analyses, runs) -> None:
+    summary, tasks_df = _suite_state_dataframe(state_path)
+    if not summary:
+        st.info("No persisted suite state yet.")
+        return
+
+    total = int(summary["total"])
+    completed = int(summary["completed"])
+    progress = completed / total if total else 0.0
+    st.progress(progress, text=f"{completed}/{total} task(s) completed")
+
+    cols = st.columns(6)
+    cols[0].metric("Total", total)
+    cols[1].metric("Succeeded", summary[SuiteTaskStatus.SUCCEEDED.value])
+    cols[2].metric("Failed", summary[SuiteTaskStatus.FAILED.value])
+    cols[3].metric("Running", summary[SuiteTaskStatus.RUNNING.value])
+    cols[4].metric("Pending", summary[SuiteTaskStatus.PENDING.value])
+    cols[5].metric("Cancelled", summary[SuiteTaskStatus.CANCELLED.value])
+
+    if summary["cancel_requested"]:
+        st.warning("Cancellation has been requested. The suite stops before starting the next task.")
+
+    if not tasks_df.empty:
+        event = st.dataframe(
+            tasks_df,
+            width="stretch",
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="suite_tasks_table",
+        )
+        selected_rows = event.selection.rows if event.selection else []
+        if selected_rows:
+            selected = tasks_df.iloc[selected_rows[0]]
+            run_id = selected.get("run_id")
+            if run_id and not df.empty and run_id in set(df["run_id"]):
+                st.divider()
+                _render_run_details(df, analyses, runs, run_id)
+            elif selected.get("result_path"):
+                run = _run_from_result_path(selected.get("result_path"))
+                if run is None:
+                    st.warning("The selected task result file could not be read.")
+                else:
+                    st.divider()
+                    _render_run_details(
+                        _dataframe_for_single_run(run),
+                        analyses,
+                        [run],
+                        run.run_id,
+                    )
+            else:
+                st.info("The selected task has not produced a result file yet.")
+
+
+def _suite_task_preview(config: ExperimentSuiteConfig) -> pd.DataFrame:
+    tasks = build_suite_tasks(config)
+    return pd.DataFrame(
+        [
+            {
+                "index": task.index,
+                "model": task.model,
+                "corpus": task.corpus.value,
+                "level": task.level,
+                "question_id": task.question_id,
+                "system": task.system.value,
+                "command": _shell_command(task.command),
+            }
+            for task in tasks
+        ]
+    )
+
+
+def _compact_names(values: list[str], *, max_items: int = 3) -> str:
+    if not values:
+        return "none"
+    if len(values) <= max_items:
+        return "-".join(values)
+    return "-".join(values[:max_items]) + f"-plus{len(values) - max_items}"
+
+
+def _suggest_suite_name(
+        *,
+        systems: list[SystemName],
+        models: list[str],
+        corpus_selections: list[SuiteCorpusSelection],
+) -> str:
+    corpus_parts: list[str] = []
+    for selection in corpus_selections:
+        part = selection.corpus.value.replace("_", "-")
+        if selection.levels:
+            part += "-l" + "-".join(str(level) for level in sorted(selection.levels))
+        if selection.question_ids:
+            part += f"-q{len(selection.question_ids)}"
+        corpus_parts.append(part)
+
+    raw_name = "-".join(
+        [
+            _compact_names(corpus_parts, max_items=2),
+            _compact_names(models, max_items=2),
+            _compact_names([system.value for system in systems], max_items=3),
+        ]
+    )
+    return suite_slug(raw_name)
+
+
+def _suite_widget_state_from_config(
+        config: ExperimentSuiteConfig,
+        model_options: list[str],
+) -> dict[str, object]:
+    state: dict[str, object] = {
+        "suite_name_input": config.name,
+        "suite_systems": [system for system in config.systems if system in _AUTOMATED_SYSTEMS],
+        "suite_models": [model for model in config.models if model in model_options] or [model_options[0]],
+        "suite_corpora": [selection.corpus.value for selection in config.corpora if
+                          selection.corpus.value in CORPUS_DEFAULTS],
+        "suite_num_ctx": config.num_ctx,
+        "suite_reasoning_enabled": config.reasoning_enabled,
+        "suite_no_trace": config.no_trace,
+        "suite_output_dir": config.output_dir,
+    }
+    for selection in config.corpora:
+        corpus = selection.corpus.value
+        state[f"suite_qf_{corpus}"] = selection.questions_file
+        state[f"suite_corpora_{corpus}"] = selection.path_to_corpora
+        state[f"suite_levels_{corpus}"] = list(selection.levels)
+        state[f"suite_ids_{corpus}"] = list(selection.question_ids)
+    return state
+
+
+def _copy_suite_config(config: ExperimentSuiteConfig) -> ExperimentSuiteConfig:
+    return config.model_copy(
+        deep=True,
+        update={
+            "suite_id": str(uuid.uuid4()),
+            "name": suite_slug(f"{config.name}-copy"),
+        },
+    )
+
+
+def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
+    st.subheader("Experiment suite")
+    st.caption(
+        "Configure a persisted multi-system benchmark suite. The suite expands to one "
+        "`experiment-runner run` command per question/system/model task."
+    )
+
+    suite_dir: Path = cfg["suite_dir"]
+    suite_dir.mkdir(parents=True, exist_ok=True)
+    saved_configs = _suite_config_paths(suite_dir)
+    selected_config_path: Path | None = None
+    loaded_config: ExperimentSuiteConfig | None = None
+
+    if saved_configs:
+        selected_config_path = st.selectbox(
+            "Saved suite config",
+            saved_configs,
+            format_func=lambda p: p.name,
+            index=0,
+        )
+        cols = st.columns(2)
+        if selected_config_path and cols[0].button("Load selected suite", width="stretch"):
+            st.session_state["loaded_suite_config_path"] = str(selected_config_path)
+            st.session_state.pop("copied_suite_config_json", None)
+            st.rerun()
+        if selected_config_path and cols[1].button("Copy selected suite", width="stretch"):
+            copied = _copy_suite_config(load_suite_config(selected_config_path))
+            st.session_state["copied_suite_config_json"] = copied.model_dump_json()
+            st.session_state.pop("loaded_suite_config_path", None)
+            st.session_state.pop("suite_loaded_config_for", None)
+            st.rerun()
+
+    loaded_path = st.session_state.get("loaded_suite_config_path")
+    if loaded_path and Path(loaded_path).is_file():
+        try:
+            loaded_config = load_suite_config(loaded_path)
+            st.info(f"Loaded suite config: `{loaded_path}`")
+        except Exception as exc:
+            st.warning(f"Could not load suite config: {exc}")
+
+    copied_config: ExperimentSuiteConfig | None = None
+    copied_config_json = st.session_state.get("copied_suite_config_json")
+    if copied_config_json:
+        try:
+            copied_config = ExperimentSuiteConfig.model_validate_json(copied_config_json)
+            st.info("Copied suite config. Save it to create a separate suite.")
+        except Exception as exc:
+            st.warning(f"Could not copy suite config: {exc}")
+            st.session_state.pop("copied_suite_config_json", None)
+
+    model_options = _model_options()
+    if copied_config and st.session_state.get("suite_copied_config_for") != copied_config.suite_id:
+        for key, value in _suite_widget_state_from_config(copied_config, model_options).items():
+            st.session_state[key] = value
+        st.session_state["suite_copied_config_for"] = copied_config.suite_id
+    elif loaded_config and st.session_state.get("suite_loaded_config_for") != loaded_path:
+        for key, value in _suite_widget_state_from_config(loaded_config, model_options).items():
+            st.session_state[key] = value
+        st.session_state["suite_loaded_config_for"] = loaded_path
+    if "suite_name_input" not in st.session_state:
+        st.session_state["suite_name_input"] = "thesis-smoke-suite"
+    if "suite_name_pending" in st.session_state:
+        st.session_state["suite_name_input"] = st.session_state.pop("suite_name_pending")
+    st.session_state.setdefault("suite_systems", [SystemName.ACE])
+    st.session_state.setdefault("suite_models", [DEFAULT_MODEL if DEFAULT_MODEL in model_options else model_options[0]])
+    st.session_state.setdefault("suite_corpora", ["solar_system_wiki"])
+    st.session_state.setdefault("suite_num_ctx", 8192)
+    st.session_state.setdefault("suite_reasoning_enabled", False)
+    st.session_state.setdefault("suite_no_trace", True)
+    st.session_state.setdefault("suite_output_dir", str(cfg["experiment_dir"]))
+
+    suite_name_container = st.container()
+
+    selected_systems = st.multiselect(
+        "systems",
+        _AUTOMATED_SYSTEMS,
+        format_func=_system_label,
+        key="suite_systems",
+    )
+
+    selected_models = st.multiselect(
+        "models",
+        model_options,
+        key="suite_models",
+    )
+    _render_model_refresh_button(key="refresh_suite_models")
+
+    selected_corpora = st.multiselect(
+        "corpora",
+        list(CORPUS_DEFAULTS.keys()),
+        key="suite_corpora",
+    )
+
+    corpus_selections: list[SuiteCorpusSelection] = []
+    for corpus in selected_corpora:
+        default_q_file, default_corpus_path = CORPUS_DEFAULTS[corpus]
+        st.session_state.setdefault(f"suite_qf_{corpus}", default_q_file)
+        st.session_state.setdefault(f"suite_corpora_{corpus}", default_corpus_path)
+        st.session_state.setdefault(f"suite_levels_{corpus}", [])
+        st.session_state.setdefault(f"suite_ids_{corpus}", [])
+        with st.expander(f"{corpus} questions", expanded=True):
+            cols = st.columns(2)
+            questions_file = cols[0].text_input(
+                f"{corpus} questions_file",
+                key=f"suite_qf_{corpus}",
+            )
+            path_to_corpora = cols[1].text_input(
+                f"{corpus} path_to_corpora",
+                key=f"suite_corpora_{corpus}",
+            )
+            rows = _load_question_rows(questions_file)
+            levels = sorted({int(row.get("level", 0)) for row in rows if row.get("level") is not None})
+            selected_levels = st.multiselect(
+                f"{corpus} levels (empty = all)",
+                levels,
+                key=f"suite_levels_{corpus}",
+            )
+            ids = [row["id"] for row in rows]
+            questions_meta = {row["id"]: row.get("question", "") for row in rows}
+            selected_ids = st.multiselect(
+                f"{corpus} question_ids (empty = all selected levels)",
+                ids,
+                format_func=lambda i: f"{i} — {questions_meta.get(i, '')[:80]}",
+                key=f"suite_ids_{corpus}",
+            )
+            corpus_selections.append(
+                SuiteCorpusSelection(
+                    corpus=Corpus(corpus),
+                    questions_file=questions_file,
+                    path_to_corpora=path_to_corpora,
+                    levels=selected_levels,
+                    question_ids=selected_ids,
+                )
+            )
+
+    suggested_name = _suggest_suite_name(
+        systems=selected_systems,
+        models=selected_models,
+        corpus_selections=corpus_selections,
+    )
+    with suite_name_container:
+        suite_name = st.text_input("suite_name", key="suite_name_input")
+        cols = st.columns([1, 3])
+        if cols[0].button("Generate suite name", width="stretch"):
+            st.session_state["suite_name_pending"] = suggested_name
+            st.rerun()
+        cols[1].caption(f"Suggested: `{suggested_name}`")
+
+    cols = st.columns(3)
+    num_ctx = cols[0].number_input(
+        "suite num_ctx",
+        min_value=1024,
+        max_value=131072,
+        step=1024,
+        key="suite_num_ctx",
+    )
+    reasoning_enabled = cols[1].checkbox(
+        "suite reasoning_enabled",
+        key="suite_reasoning_enabled",
+    )
+    no_trace = cols[2].checkbox(
+        "suite no_trace",
+        key="suite_no_trace",
+    )
+
+    output_dir = st.text_input(
+        "suite output_dir",
+        key="suite_output_dir",
+    )
+
+    config = ExperimentSuiteConfig(
+        name=suite_name,
+        systems=selected_systems,
+        models=selected_models,
+        corpora=corpus_selections,
+        output_dir=output_dir,
+        num_ctx=int(num_ctx),
+        reasoning_enabled=reasoning_enabled,
+        no_trace=no_trace,
+    )
+    if loaded_config and copied_config is None:
+        config.suite_id = loaded_config.suite_id
+    elif copied_config:
+        config.suite_id = copied_config.suite_id
+
+    config_path, state_path, launcher_log_path = _suite_paths(suite_dir, config)
+    run_args = _build_suite_run_args(str(config_path), str(state_path))
+    cancel_args = _build_suite_cancel_args(str(state_path))
+
+    st.markdown("### Generated task commands")
+    try:
+        preview = _suite_task_preview(config)
+        st.dataframe(preview, width="stretch", hide_index=True)
+        st.caption(f"{len(preview)} task command(s) generated.")
+    except Exception as exc:
+        preview = pd.DataFrame()
+        st.error(f"Could not build suite preview: {exc}")
+
+    st.markdown("### Suite control")
+    st.code(_shell_command(run_args), language="bash")
+    cols = st.columns(4)
+    if cols[0].button("Save config", width="stretch", disabled=preview.empty):
+        save_suite_config(config_path, config)
+        st.success(f"Saved {config_path}")
+    if cols[1].button("Run / resume suite", type="primary", width="stretch", disabled=preview.empty):
+        save_suite_config(config_path, config)
+        pid = _start_background_subprocess(run_args, launcher_log_path)
+        st.success(f"Started suite process pid={pid}.")
+        st.rerun()
+    if cols[2].button("Cancel suite", width="stretch", disabled=not state_path.exists()):
+        result = subprocess.run(cancel_args, capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            st.warning("Cancellation requested.")
+        else:
+            st.error(result.stderr or result.stdout or f"Cancel failed with {result.returncode}")
+    if cols[3].button("Refresh suite status", width="stretch"):
+        st.rerun()
+
+    st.caption(f"Config: `{config_path}`")
+    st.caption(f"State: `{state_path}`")
+    _render_suite_progress(state_path, df, analyses, runs)
+
+    if launcher_log_path.exists():
+        with st.expander("Suite launcher output", expanded=False):
+            st.code(launcher_log_path.read_text(encoding="utf-8")[-8000:], language="text")
 
 
 def _tab_run_experiment(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
@@ -685,6 +1779,7 @@ def _render_run_experiment_form(cfg: dict) -> None:
     cols = st.columns(3)
     with cols[0]:
         model = _select_model("model", key="experiment_model")
+        _render_model_refresh_button(key="refresh_run_experiment_models")
     num_ctx = cols[1].number_input(
         "num_ctx",
         min_value=1024,
@@ -752,35 +1847,125 @@ def _render_run_experiment_form(cfg: dict) -> None:
         _render_run_errors(st.session_state["_last_result_path"])
 
 
-def _tab_actions(cfg: dict, filtered: pd.DataFrame) -> None:
+def _tab_actions(cfg: dict, filtered: pd.DataFrame, analyses, runs) -> None:
     st.subheader("Actions")
     st.caption("Both actions shell out to the `result-processor` CLI so behaviour matches Makefile/terminal usage.")
 
-    st.markdown("### Analyze")
-    cols = st.columns([1, 1, 2])
-    resume = cols[0].checkbox("Resume (skip cached)", value=True)
-    only_filtered = cols[1].checkbox("Only filtered runs", value=False)
+    with st.expander("Run analysis jobs", expanded=False):
+        st.markdown("### Analyze")
+        cols = st.columns([1, 1, 2])
+        resume = cols[0].checkbox("Resume (skip cached)", value=True)
+        only_filtered = cols[1].checkbox("Only filtered runs", value=False)
 
-    if cols[2].button("▶ Run analyze", type="primary", width="stretch"):
-        args = _cli_path() + [
-            "analyze",
-            "--experiment-results-dir", str(cfg["experiment_dir"]),
-            "--output-dir", str(cfg["analysis_dir"]),
-            "--path-to-corpora", cfg["corpora_root"],
-            "--examiner-model", cfg["examiner_model"],
-            "--num-ctx", str(cfg["num_ctx"]),
-        ]
-        if not resume:
-            args.append("--no-resume")
-        if only_filtered and not filtered.empty:
-            input_files = sorted({_locate_source_file(cfg["experiment_dir"], rid) for rid in filtered["run_id"]})
-            input_files = [f for f in input_files if f]
-            if input_files:
-                args.append("--input-files")
-                args.extend(input_files)
-        rc = _run_subprocess(args, "Running analyze")
-        if rc == 0:
-            st.cache_data.clear()
+        if cols[2].button("▶ Run analyze", type="primary", width="stretch"):
+            args = _cli_path() + [
+                "analyze",
+                "--experiment-results-dir", str(cfg["experiment_dir"]),
+                "--output-dir", str(cfg["analysis_dir"]),
+                "--path-to-corpora", cfg["corpora_root"],
+                "--examiner-model", cfg["examiner_model"],
+                "--num-ctx", str(cfg["num_ctx"]),
+            ]
+            if not resume:
+                args.append("--no-resume")
+            if only_filtered and not filtered.empty:
+                input_files = sorted({_locate_source_file(cfg["experiment_dir"], rid) for rid in filtered["run_id"]})
+                input_files = [f for f in input_files if f]
+                if input_files:
+                    args.append("--input-files")
+                    args.extend(input_files)
+            rc = _run_subprocess(args, "Running analyze")
+            if rc == 0:
+                st.cache_data.clear()
+
+        st.markdown("### Analyze experiment suites")
+        suite_states = _suite_state_paths(cfg["suite_dir"])
+        if not suite_states:
+            st.info("No suite state files found yet.")
+        else:
+            selected_state = st.selectbox(
+                "Suite state",
+                suite_states,
+                format_func=lambda p: p.name,
+            )
+            result_files = _result_files_from_suite_states([selected_state])
+            selected_suite_state = load_suite_state(selected_state)
+            selected_suite_config_path = selected_suite_state.config_path or str(
+                selected_state.with_suffix("").with_suffix(".json"))
+            default_analysis_name = (
+                f"{suite_slug(selected_suite_state.suite_name)}-"
+                f"{cfg['examiner_model'].replace(':', '-')}-analysis"
+            )
+            analysis_name = st.text_input("Analysis run name", value=default_analysis_name)
+            suite_resume = st.checkbox("Resume suite analysis (skip cached)", value=True)
+            st.caption(f"{len(result_files)} result file(s) found for selected suite state.")
+            analysis_output_dir, analysis_state_path, analysis_log_path = _analysis_job_paths(
+                cfg["analysis_dir"],
+                analysis_name,
+            )
+            analysis_name_exists = analysis_output_dir.exists()
+            if analysis_name_exists:
+                st.warning(
+                    "This analysis run name already exists in the result archive. "
+                    "Choose a unique name before running analysis to avoid mixing new results with archived data."
+                )
+            run_args = _build_analysis_job_run_args(str(analysis_state_path))
+            cancel_args = _build_analysis_job_cancel_args(str(analysis_state_path))
+            st.code(_shell_command(run_args), language="bash")
+
+            if st.button(
+                    "▶ Run / resume suite analysis",
+                    type="primary",
+                    width="stretch",
+                    disabled=not result_files or not analysis_name.strip() or analysis_name_exists,
+            ):
+                state = build_analysis_job_state(
+                    job_name=analysis_name,
+                    experiment_results_dir=str(cfg["experiment_dir"]),
+                    output_dir=str(analysis_output_dir),
+                    path_to_corpora=cfg["corpora_root"],
+                    examiner_model=cfg["examiner_model"],
+                    num_ctx=cfg["num_ctx"],
+                    input_files=result_files,
+                    resume=suite_resume,
+                    log_path=str(analysis_log_path),
+                    suite_id=selected_suite_state.suite_id,
+                    suite_name=selected_suite_state.suite_name,
+                    suite_config_path=str(Path(selected_suite_config_path).resolve()),
+                    suite_state_path=str(selected_state.resolve()),
+                )
+                save_analysis_job_state(analysis_state_path, state)
+                pid = _start_background_subprocess(run_args, analysis_log_path)
+                st.success(f"Started analysis job pid={pid}.")
+                st.rerun()
+
+            cols = st.columns(2)
+            if cols[0].button("Cancel suite analysis", width="stretch", disabled=not analysis_state_path.exists()):
+                result = subprocess.run(cancel_args, capture_output=True, text=True, check=False)
+                if result.returncode == 0:
+                    st.warning("Analysis cancellation requested.")
+                else:
+                    st.error(result.stderr or result.stdout or f"Cancel failed with {result.returncode}")
+            if cols[1].button("Refresh analysis status", width="stretch"):
+                st.cache_data.clear()
+                st.rerun()
+
+            st.caption(f"Analysis output: `{analysis_output_dir}`")
+            st.caption(f"Analysis state: `{analysis_state_path}`")
+            analysis_df = _render_analysis_job_progress(
+                analysis_state_path,
+                result_files,
+                analysis_output_dir,
+                analyses,
+                runs,
+            )
+            _render_inline_analysis_charts(analysis_df)
+            if analysis_log_path.exists():
+                with st.expander("Analysis job output", expanded=False):
+                    st.code(analysis_log_path.read_text(encoding="utf-8")[-8000:], language="text")
+
+    st.divider()
+    _render_suite_centric_analysis_results(cfg, runs)
 
     st.markdown("### Visualize")
     cols = st.columns([3, 1])
@@ -834,6 +2019,7 @@ def main() -> None:
     analyses = data["analyses"]
 
     (
+        suite_tab,
         run_tab,
         overview_tab,
         runs_tab,
@@ -841,8 +2027,11 @@ def main() -> None:
         details_tab,
         actions_tab,
     ) = st.tabs(
-        ["Run experiment", "Overview", "Runs", "Charts", "Run details", "Actions"]
+        ["Experiment suite", "Run experiment", "Overview", "Runs", "Charts", "Run details", "Actions"]
     )
+
+    with suite_tab:
+        _tab_experiment_suite(cfg, df, analyses, runs)
 
     with run_tab:
         _tab_run_experiment(cfg, df, analyses, runs)
@@ -860,7 +2049,7 @@ def main() -> None:
         _tab_run_details(df, analyses, runs)
 
     with actions_tab:
-        _tab_actions(cfg, filtered)
+        _tab_actions(cfg, filtered, analyses, runs)
 
 
 if __name__ == "__main__" or __name__ == "__page__":

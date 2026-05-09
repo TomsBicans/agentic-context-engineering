@@ -8,6 +8,21 @@ from .metrics import RunMetrics
 from .trace import SessionTrace
 
 
+class CorpusSnapshot(BaseModel):
+    source_corpus_path: str
+    prepared_corpus_path: str
+    temp_root_path: Optional[str] = None
+    temp_root_filesystem: Optional[str] = None
+    copied_paths: list[str] = Field(default_factory=list)
+    file_count: int = 0
+    total_bytes: int = 0
+    config_json: Optional[dict[str, Any]] = None
+    manifest_entry_count: Optional[int] = None
+    pre_run_tree: Optional[str] = None
+    post_run_tree: Optional[str] = None
+    error: Optional[str] = None
+
+
 class RunResult(BaseModel):
     run_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -35,6 +50,9 @@ class RunResult(BaseModel):
 
     # --- Metrics (aggregated + post-processing) ---
     metrics: RunMetrics = Field(default_factory=RunMetrics)
+
+    # --- Corpus preparation metadata (optional; absent in older results) ---
+    corpus_snapshot: Optional[CorpusSnapshot] = None
 
     # --- Full session trace (optional, may be large) ---
     trace: Optional[SessionTrace] = None

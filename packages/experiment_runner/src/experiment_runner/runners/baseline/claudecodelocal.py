@@ -25,16 +25,6 @@ _ALLOWED_TOOLS = "read_file,glob_search,grep_search"
 _OLLAMA_BASE_URL = "http://localhost:11434"
 _OLLAMA_API_KEY = "ollama"
 
-_CLAUDECODE_PROMPT_SUFFIX = """
-Claude Code runtime notes
-- For this run, the corpus is mounted at ./corpus.
-- Available tools are grep_search, glob_search, and read_file.
-- Use grep_search or glob_search instead of search() or list_paths().
-- There is no time_left() tool; keep the search bounded and answer within the run budget.
-- Do not search, read, or cite files under ./.claude.
-""".strip()
-
-
 class ClaudeCodeLocalRunner(BaseRunner):
     """Runner for the Claude Code CLI baseline against a local Ollama model.
 
@@ -143,7 +133,7 @@ class ClaudeCodeLocalRunner(BaseRunner):
 
     @staticmethod
     def _build_prompt(question: str) -> str:
-        return f"{EXAMINEE_SYSTEM_MESSAGE}\n\n{_CLAUDECODE_PROMPT_SUFFIX}\n\nQuestion:\n{question}"
+        return f"{EXAMINEE_SYSTEM_MESSAGE}\n\nQuestion:\n{question}"
 
     def _invoke_claude(self, prompt: str, workspace: Path) -> subprocess.CompletedProcess:
         # Claude Code requires the "ollama/" provider prefix ("ollama/qwen3:4b")

@@ -96,6 +96,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Enable chain-of-thought / reasoning mode for the model",
     )
 
+    suite = subparsers.add_parser("suite", help="Plan, run, and resume experiment suites")
+    suite_subparsers = suite.add_subparsers(dest="suite_command", required=True)
+
+    suite_plan = suite_subparsers.add_parser("plan", help="Print the expanded suite task list")
+    suite_plan.add_argument("--config", required=True, help="Experiment suite config JSON")
+    suite_plan.add_argument("--json", action="store_true", help="Print planned tasks as JSON")
+
+    suite_run = suite_subparsers.add_parser("run", help="Execute or resume a suite")
+    suite_run.add_argument("--config", required=True, help="Experiment suite config JSON")
+    suite_run.add_argument("--state", default=None, help="Suite state JSON path")
+
+    suite_status = suite_subparsers.add_parser("status", help="Print suite progress state")
+    suite_status.add_argument("--state", required=True, help="Suite state JSON path")
+
+    suite_cancel = suite_subparsers.add_parser("cancel", help="Request cooperative suite cancellation")
+    suite_cancel.add_argument("--state", required=True, help="Suite state JSON path")
+
     return parser.parse_args(argv)
 
 
@@ -106,6 +123,25 @@ def main(argv: list[str] | None = None) -> None:
         from experiment_runner.commands.run import run_experiment
         try:
             run_experiment(args)
+        except (ValueError, OSError) as exc:
+            sys.stderr.write(f"error: {exc}\n")
+            raise SystemExit(1) from exc
+    elif args.command == "suite":
+        from experiment_runner.commands.suite import (
+            run_suite_cancel,
+            run_suite_plan,
+            run_suite_run,
+            run_suite_status,
+        )
+        try:
+            if args.suite_command == "plan":
+                run_suite_plan(args)
+            elif args.suite_command == "run":
+                run_suite_run(args)
+            elif args.suite_command == "status":
+                run_suite_status(args)
+            elif args.suite_command == "cancel":
+                run_suite_cancel(args)
         except (ValueError, OSError) as exc:
             sys.stderr.write(f"error: {exc}\n")
             raise SystemExit(1) from exc

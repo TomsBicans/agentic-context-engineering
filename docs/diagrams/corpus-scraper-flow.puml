@@ -1,0 +1,89 @@
+@startuml
+title Corpus Scraper - Corpus Construction Flow
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam activity {
+  BackgroundColor #F8F8F8
+  BorderColor #555555
+  DiamondBackgroundColor #FFF7E6
+  DiamondBorderColor #555555
+}
+
+start
+
+:Parse scraper command\n(list, crawl, repo, or mediawiki);
+:Validate scrape configuration\nand output settings;
+
+if (Dry run?) then (yes)
+  :Print planned job JSON;
+  stop
+endif
+
+:Create corpus directory;
+:Write config.json;
+:Open or create manifest.jsonl;
+
+if (Mode is repo?) then (yes)
+  :Clone repository at selected ref;
+  :List tracked files;
+  :Apply subpath, include,\nexclude, and max_files filters;
+  repeat
+    :Read selected file;
+    :Compute content hash;
+    if (Duplicate content?) then (yes)
+      :Record duplicate in manifest;
+    else (no)
+      :Optionally store raw file;
+      :Optionally decode and store text file;
+      :Optionally store empty outlink list;
+      :Append manifest entry;
+    endif
+  repeat while (More selected files?) is (yes)
+else (HTTP source)
+  if (Mode is crawl?) then (crawl)
+    :Start Scrapy CrawlSpider\nfrom start URL;
+    :Follow allowed links within\nscope, depth, and page limit;
+  else (list)
+    :Start Scrapy ListSpider\nfrom input URL list;
+    :Fetch each listed page;
+  endif
+
+  repeat
+    :Receive fetched page item;
+    :Compute content hash;
+    if (Duplicate content?) then (yes)
+      :Record duplicate in manifest;
+    else (no)
+      :Optionally store raw response;
+      if (Text output requested?) then (yes)
+        if (Markdown requested?) then (yes)
+          :Prune HTML boilerplate;
+          :Convert HTML to Markdown\nwith pandoc;
+        else (plain)
+          :Extract plain response text;
+        endif
+        :Store text artifact;
+      endif
+      :Optionally store extracted outlinks;
+      :Append manifest entry;
+    endif
+  repeat while (More fetched pages?) is (yes)
+endif
+
+:Close manifest;
+:Print scrape job JSON;
+
+stop
+
+legend right
+  Output corpus layout:
+  config.json
+  manifest.jsonl
+  raw/
+  text/
+  outlinks/
+endlegend
+
+@enduml

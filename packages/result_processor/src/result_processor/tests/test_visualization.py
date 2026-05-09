@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from result_processor.tests.conftest import analysis_result, run_payload, write_jsonl
-from result_processor.visualization.loader import build_dataframe, load_analyses, load_runs
+from result_processor.visualization.loader import build_dataframe, build_dataframe_for_files, load_analyses, load_runs
 from result_processor.visualization.pipeline import visualize_results
 from result_processor.visualization.plots import ALL_PLOTS
 from result_processor.visualization.tables import ALL_TABLES
@@ -16,7 +16,13 @@ def _write_result_files(tmp_path):
         experiment_dir / "runs.jsonl",
         [
             run_payload(run_id="r1", question_id="ss_L1_001"),
-            run_payload(run_id="r2", question_id="ss_L2_001", created_at="2026-04-27T10:00:00Z"),
+            run_payload(
+                run_id="r2",
+                question_id="ss_L2_001",
+                created_at="2026-04-27T10:00:00Z",
+                answer_text="",
+                answer_error="model timed out",
+            ),
         ],
     )
     write_jsonl(analysis_dir / "runs.jsonl", [analysis_result(run_id="r1")])
@@ -38,6 +44,23 @@ def test_loader_joins_runs_and_analyses_with_dates_and_levels(tmp_path) -> None:
     assert str(df.loc[df["run_id"] == "r1", "run_date"].iloc[0]).endswith("UTC")
     assert df.loc[df["run_id"] == "r1", "support_rate"].iloc[0] == 1.0
     assert pd.isna(df.loc[df["run_id"] == "r2", "support_rate"].iloc[0])
+    assert df.loc[df["run_id"] == "r1", "analysis_time_s"].iloc[0] == 1.25
+    assert pd.isna(df.loc[df["run_id"] == "r2", "analysis_time_s"].iloc[0])
+    assert df.loc[df["run_id"] == "r1", "answer_char_count"].iloc[0] == len(
+        "[Jupiter is a planet.] [file:planets.md, lines:0-1]"
+    )
+    assert df.loc[df["run_id"] == "r2", "answer_char_count"].iloc[0] == 0
+    assert df.loc[df["run_id"] == "r2", "answer_error"].iloc[0] == "model timed out"
+    assert bool(df.loc[df["run_id"] == "r2", "has_answer_error"].iloc[0]) is True
+
+
+def test_loader_builds_dataframe_for_selected_result_files(tmp_path) -> None:
+    experiment_dir, analysis_dir = _write_result_files(tmp_path)
+
+    df = build_dataframe_for_files([experiment_dir / "runs.jsonl"], analysis_dir)
+
+    assert df["run_id"].tolist() == ["r1", "r2"]
+    assert df.loc[df["run_id"] == "r1", "support_rate"].iloc[0] == 1.0
 
 
 def test_plot_builders_return_figures_for_populated_and_empty_inputs(tmp_path) -> None:
@@ -69,4 +92,11 @@ def test_visualize_results_writes_html_plots_and_latex_tables(tmp_path) -> None:
 
     assert (out_dir / "plots" / "support_by_system.html").is_file()
     assert (out_dir / "plots" / "verdict_breakdown.html").is_file()
+    assert (out_dir / "plots" / "time_vs_answer_chars.html").is_file()
+    assert (out_dir / "plots" / "error_rate_by_system.html").is_file()
+    assert (out_dir / "plots" / "analysis_time_by_system.html").is_file()
+    assert (out_dir / "plots" / "analysis_time_by_examiner.html").is_file()
+    assert (out_dir / "plots" / "analysis_time_vs_claims.html").is_file()
+    assert (out_dir / "plots" / "analysis_time_vs_answer_chars.html").is_file()
+    assert (out_dir / "plots" / "execution_time_vs_analysis_time.html").is_file()
     assert (out_dir / "tables" / "per_system_summary.tex").is_file()

@@ -19,19 +19,6 @@ _TIMEOUT_SECONDS = 180
 # between corpora (e.g. "thesis-oblivion_wiki").
 _AGENT_PREFIX = "thesis"
 
-# Overrides the ACE-specific tooling strategy section of EXAMINEE_SYSTEM_MESSAGE.
-# OpenClaw exposes a `read` tool and an `exec` tool; there is no time_left(),
-# list_paths(), or search() — those are ACE-specific.
-_OPENCLAW_PROMPT_SUFFIX = """
-OpenClaw runtime notes
-- You are a research agent. Answer using ONLY the files in your workspace (the corpus).
-- Use the `read` tool to open individual files by path.
-- Use `exec` with a shell command (e.g. `ls`, `grep -r`) to discover file paths when needed.
-- Do NOT use web_search or any tool that fetches external information.
-- Every factual claim must be cited with a file path and approximate line range.
-""".strip()
-
-
 class OpenClawRunner(BaseRunner):
     """Runner for the OpenClaw baseline via the official `openclaw` CLI.
 
@@ -169,7 +156,7 @@ class OpenClawRunner(BaseRunner):
 
     @staticmethod
     def _build_prompt(question: str) -> str:
-        return f"{EXAMINEE_SYSTEM_MESSAGE}\n\n{_OPENCLAW_PROMPT_SUFFIX}\n\nQuestion:\n{question}"
+        return f"{EXAMINEE_SYSTEM_MESSAGE}\n\nQuestion:\n{question}"
 
     def _invoke_openclaw(
             self, prompt: str, agent_name: str, session_id: str
