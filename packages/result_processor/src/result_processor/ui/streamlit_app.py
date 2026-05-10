@@ -1301,7 +1301,7 @@ def _dataframe_for_single_run(run: RunResult) -> pd.DataFrame:
             "tool_call_count": run.metrics.tool_call_count if run.metrics else None,
             "tokens_total": tokens_total,
             "corpus_used": run.metrics.corpus_used if run.metrics else None,
-            "corpus_snapshot_enabled": run.corpus_snapshot.enabled if run.corpus_snapshot else False,
+            "corpus_snapshot_enabled": run.corpus_snapshot is not None,
             "corpus_snapshot_file_count": run.corpus_snapshot.file_count if run.corpus_snapshot else None,
         }
     ])

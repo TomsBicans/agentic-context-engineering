@@ -94,7 +94,7 @@ def _run_record(run: RunResult, analysis: AnalysisResult | None) -> dict[str, An
         "tool_call_count": run.metrics.tool_call_count if run.metrics else None,
         "tokens_total": tokens_total,
         "corpus_used": run.metrics.corpus_used if run.metrics else None,
-        "corpus_snapshot_enabled": run.corpus_snapshot.enabled if run.corpus_snapshot else False,
+        "corpus_snapshot_enabled": run.corpus_snapshot is not None,
         "corpus_snapshot_file_count": run.corpus_snapshot.file_count if run.corpus_snapshot else None,
         # analysis fields — None when no analysis yet
         "support_rate": analysis.support_rate if analysis else None,
