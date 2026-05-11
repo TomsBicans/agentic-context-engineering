@@ -684,6 +684,12 @@ def _render_run_details(df: pd.DataFrame, analyses, runs, run_id: str) -> None:
     cols[2].metric("Verdict", analysis.verdict.value)
     cols[3].metric("Helpfulness", analysis.helpfulness_rating or "—")
 
+    cols = st.columns(4)
+    cols[0].metric("EM", f"{analysis.exact_match:.2f}" if analysis.exact_match is not None else "—")
+    cols[1].metric("F1", f"{analysis.f1:.2f}" if analysis.f1 is not None else "—")
+    cols[2].metric("Precision", f"{analysis.precision:.2f}" if analysis.precision is not None else "—")
+    cols[3].metric("Recall", f"{analysis.recall:.2f}" if analysis.recall is not None else "—")
+
     if analysis.examiner_notes:
         st.markdown(f"**Examiner notes:** {analysis.examiner_notes}")
 
@@ -1106,6 +1112,10 @@ def _render_existing_analysis_results(cfg: dict, runs) -> None:
             "model",
             "verdict",
             "support_rate",
+            "exact_match",
+            "f1",
+            "precision",
+            "recall",
             "helpfulness_rating",
             "execution_time_s",
             "tool_call_count",
@@ -1192,6 +1202,10 @@ def _render_suite_centric_analysis_results(cfg: dict, runs) -> None:
             "model",
             "verdict",
             "support_rate",
+            "exact_match",
+            "f1",
+            "precision",
+            "recall",
             "helpfulness_rating",
             "execution_time_s",
             "tool_call_count",

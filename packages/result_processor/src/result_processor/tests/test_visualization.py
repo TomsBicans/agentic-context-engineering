@@ -43,6 +43,10 @@ def test_loader_joins_runs_and_analyses_with_dates_and_levels(tmp_path) -> None:
     assert "run_date" in df.columns
     assert str(df.loc[df["run_id"] == "r1", "run_date"].iloc[0]).endswith("UTC")
     assert df.loc[df["run_id"] == "r1", "support_rate"].iloc[0] == 1.0
+    assert df.loc[df["run_id"] == "r1", "exact_match"].iloc[0] == 1.0
+    assert df.loc[df["run_id"] == "r1", "f1"].iloc[0] == 1.0
+    assert df.loc[df["run_id"] == "r1", "precision"].iloc[0] == 1.0
+    assert df.loc[df["run_id"] == "r1", "recall"].iloc[0] == 1.0
     assert pd.isna(df.loc[df["run_id"] == "r2", "support_rate"].iloc[0])
     assert df.loc[df["run_id"] == "r1", "analysis_time_s"].iloc[0] == 1.25
     assert pd.isna(df.loc[df["run_id"] == "r2", "analysis_time_s"].iloc[0])

@@ -47,6 +47,7 @@ class BaseRunner(ABC):
             corpus=self.config.corpus,
             question_id=question.id,
             question_text=question.question,
+            expected_facts=question.expected_facts,
             model=self.config.model,
             quantization=self.config.quantization,
             inference_config=self.config.inference_config,
