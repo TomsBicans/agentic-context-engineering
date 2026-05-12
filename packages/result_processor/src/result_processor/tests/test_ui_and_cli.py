@@ -378,7 +378,11 @@ def test_analysis_run_records_link_legacy_directory_by_suite_result_names(tmp_pa
     assert records[0]["result_files"] == [result_path]
 
 
-def test_create_analysis_export_zip_includes_suite_analysis_and_charts(tmp_path) -> None:
+def test_create_analysis_export_zip_includes_suite_analysis_and_charts(tmp_path, monkeypatch) -> None:
+    def fake_write_image(_fig, file, *args, **kwargs) -> None:
+        file.write(b"%PDF-1.4\n")
+
+    monkeypatch.setattr("plotly.graph_objects.Figure.write_image", fake_write_image)
     result_path = tmp_path / "experiment" / "run.jsonl"
     write_jsonl(result_path, [run_payload(run_id="r1")])
     analysis_dir = tmp_path / "analysis" / "analysis-a"
@@ -412,10 +416,97 @@ def test_create_analysis_export_zip_includes_suite_analysis_and_charts(tmp_path)
     assert "suite/suite.json" in names
     assert "suite/suite.state.json" in names
     assert "tables/analysis_results.csv" in names
-    assert "charts/time_vs_answer_chars.html" in names
-    assert "charts/error_rate_by_system.html" in names
+    assert "charts/charts_manifest.json" in names
+    assert "charts/C05_time_vs_answer_chars.html" in names
+    assert "charts/C05_time_vs_answer_chars.pdf" in names
+    assert "charts/C11_error_rate_by_system.html" in names
+    assert "charts/C11_error_rate_by_system.pdf" in names
     assert "experiment_data/analysis-a/run.jsonl" in names
     assert "analysis_results/analysis-a/run.jsonl" in names
+
+
+def test_create_analysis_export_zip_reports_pdf_export_errors(tmp_path, monkeypatch) -> None:
+    def fail_write_image(_fig, file, *args, **kwargs) -> None:
+        raise RuntimeError("kaleido is missing chrome")
+
+    monkeypatch.setattr("plotly.graph_objects.Figure.write_image", fail_write_image)
+    result_path = tmp_path / "experiment" / "run.jsonl"
+    write_jsonl(result_path, [run_payload(run_id="r1")])
+    analysis_dir = tmp_path / "analysis" / "analysis-a"
+    write_jsonl(analysis_dir / "run.jsonl", [analysis_result(run_id="r1")])
+    config_path = tmp_path / "suite.json"
+    state_path = tmp_path / "suite.state.json"
+    config_path.write_text("{}\n", encoding="utf-8")
+    state_path.write_text("{}\n", encoding="utf-8")
+    suite_record = {
+        "suite_id": "suite-1",
+        "suite_name": "suite",
+        "state_path": state_path,
+        "config_path": config_path,
+    }
+    analysis_record = {
+        "analysis_name": "analysis-a",
+        "analysis_dir": analysis_dir,
+        "analysis_files": [analysis_dir / "run.jsonl"],
+        "result_files": [result_path],
+        "metadata": {},
+    }
+    analysis_df = ui._combined_analysis_dataframe([analysis_record])
+    export_errors: list[str] = []
+
+    zip_bytes = ui._create_analysis_export_zip(suite_record, [analysis_record], analysis_df, export_errors)
+
+    import zipfile
+    from io import BytesIO
+    with zipfile.ZipFile(BytesIO(zip_bytes)) as zf:
+        names = set(zf.namelist())
+        error_text = zf.read("charts/pdf_export_errors.txt").decode("utf-8")
+    assert "charts/C01_support_by_system.html" in names
+    assert "charts/C01_support_by_system.pdf" not in names
+    assert "charts/pdf_export_errors.txt" in names
+    assert export_errors
+    assert "C01 support_by_system: PDF export failed: kaleido is missing chrome" in error_text
+
+
+def test_create_analysis_export_zip_reports_progress(tmp_path, monkeypatch) -> None:
+    def fake_write_image(_fig, file, *args, **kwargs) -> None:
+        file.write(b"%PDF-1.4\n")
+
+    monkeypatch.setattr("plotly.graph_objects.Figure.write_image", fake_write_image)
+    result_path = tmp_path / "experiment" / "run.jsonl"
+    write_jsonl(result_path, [run_payload(run_id="r1")])
+    analysis_dir = tmp_path / "analysis" / "analysis-a"
+    write_jsonl(analysis_dir / "run.jsonl", [analysis_result(run_id="r1")])
+    config_path = tmp_path / "suite.json"
+    state_path = tmp_path / "suite.state.json"
+    config_path.write_text("{}\n", encoding="utf-8")
+    state_path.write_text("{}\n", encoding="utf-8")
+    suite_record = {
+        "suite_id": "suite-1",
+        "suite_name": "suite",
+        "state_path": state_path,
+        "config_path": config_path,
+    }
+    analysis_record = {
+        "analysis_name": "analysis-a",
+        "analysis_dir": analysis_dir,
+        "analysis_files": [analysis_dir / "run.jsonl"],
+        "result_files": [result_path],
+        "metadata": {},
+    }
+    analysis_df = ui._combined_analysis_dataframe([analysis_record])
+    progress_updates: list[tuple[int, int, str]] = []
+
+    ui._create_analysis_export_zip(
+        suite_record,
+        [analysis_record],
+        analysis_df,
+        progress_callback=lambda current, total, label: progress_updates.append((current, total, label)),
+    )
+
+    assert progress_updates[0] == (0, 57, "Preparing chart export")
+    assert progress_updates[-1] == (57, 57, "Exported PDF for C19 execution_time_vs_analysis_time")
+    assert any(update == (2, 57, "Exported HTML for C01 support_by_system") for update in progress_updates)
 
 
 def test_run_id_from_result_path_reads_first_valid_jsonl_row(tmp_path) -> None:

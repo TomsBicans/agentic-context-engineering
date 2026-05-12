@@ -15,6 +15,7 @@ import subprocess
 import sys
 import uuid
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 
 import pandas as pd
@@ -50,7 +51,7 @@ from result_processor.visualization.loader import (
     load_analyses,
     load_runs,
 )
-from result_processor.visualization.plots import ALL_PLOTS
+from result_processor.visualization.plots import ALL_PLOTS, CHARTS, charts_manifest
 
 _AUTOMATION_BADGE: dict[AutomationLevel, str] = {
     AutomationLevel.FULL: "⚙ automated",
@@ -911,7 +912,13 @@ def _combined_analysis_dataframe(records: list[dict]) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
-def _create_analysis_export_zip(suite_record: dict, analysis_records: list[dict], analysis_df: pd.DataFrame) -> bytes:
+def _create_analysis_export_zip(
+    suite_record: dict,
+    analysis_records: list[dict],
+    analysis_df: pd.DataFrame,
+    export_errors: list[str] | None = None,
+    progress_callback: Callable[[int, int, str], None] | None = None,
+) -> bytes:
     manifest = {
         "suite": {
             "suite_id": suite_record["suite_id"],
@@ -939,11 +946,45 @@ def _create_analysis_export_zip(suite_record: dict, analysis_records: list[dict]
             zf.write(suite_record["state_path"], f"suite/{suite_record['state_path'].name}")
         if not analysis_df.empty:
             zf.writestr("tables/analysis_results.csv", analysis_df.to_csv(index=False))
-            for name, builder in ALL_PLOTS.items():
+            zf.writestr("charts/charts_manifest.json", json.dumps(charts_manifest(), indent=2, ensure_ascii=False) + "\n")
+            chart_count = len(CHARTS)
+            total_steps = chart_count * 3
+            completed_steps = 0
+            if progress_callback is not None:
+                progress_callback(completed_steps, total_steps, "Preparing chart export")
+            for chart in CHARTS:
                 try:
-                    zf.writestr(f"charts/{name}.html", builder(analysis_df).to_html(include_plotlyjs="cdn"))
-                except Exception:
+                    fig = chart.builder(analysis_df)
+                except Exception as exc:
+                    if export_errors is not None:
+                        export_errors.append(f"{chart.id} {chart.slug}: chart build failed: {exc}")
+                    completed_steps += 3
+                    if progress_callback is not None:
+                        progress_callback(completed_steps, total_steps, f"Skipped {chart.id} {chart.slug}")
                     continue
+                completed_steps += 1
+                if progress_callback is not None:
+                    progress_callback(completed_steps, total_steps, f"Built {chart.id} {chart.slug}")
+                try:
+                    zf.writestr(f"charts/{chart.html_file}", fig.to_html(include_plotlyjs="cdn"))
+                except Exception as exc:
+                    if export_errors is not None:
+                        export_errors.append(f"{chart.id} {chart.slug}: HTML export failed: {exc}")
+                completed_steps += 1
+                if progress_callback is not None:
+                    progress_callback(completed_steps, total_steps, f"Exported HTML for {chart.id} {chart.slug}")
+                try:
+                    pdf_buffer = io.BytesIO()
+                    fig.write_image(pdf_buffer, format="pdf")
+                    zf.writestr(f"charts/{chart.pdf_file}", pdf_buffer.getvalue())
+                except Exception as exc:
+                    if export_errors is not None:
+                        export_errors.append(f"{chart.id} {chart.slug}: PDF export failed: {exc}")
+                completed_steps += 1
+                if progress_callback is not None:
+                    progress_callback(completed_steps, total_steps, f"Exported PDF for {chart.id} {chart.slug}")
+            if export_errors:
+                zf.writestr("charts/pdf_export_errors.txt", "\n\n".join(export_errors) + "\n")
         for record in analysis_records:
             prefix = suite_slug(record["analysis_name"])
             for path in record["result_files"]:
@@ -1229,7 +1270,29 @@ def _render_suite_centric_analysis_results(cfg: dict, runs) -> None:
             _render_run_details(analysis_df, load_analyses(analysis_dir), runs, row["run_id"])
 
     if selected_records and not analysis_df.empty:
-        zip_bytes = _create_analysis_export_zip(selected_suite, selected_records, analysis_df)
+        export_errors: list[str] = []
+        with st.status("Preparing export zip", expanded=True) as export_status:
+            export_progress = st.progress(0.0, text="Starting chart export")
+
+            def update_export_progress(current: int, total: int, label: str) -> None:
+                export_progress.progress(min(current / max(total, 1), 1.0), text=f"{current}/{total} - {label}")
+
+            zip_bytes = _create_analysis_export_zip(
+                selected_suite,
+                selected_records,
+                analysis_df,
+                export_errors,
+                update_export_progress,
+            )
+            export_progress.progress(1.0, text="Export zip ready")
+            export_status.update(label="Export zip ready", state="complete", expanded=False)
+        if export_errors:
+            st.warning(
+                f"Export completed, but {len(export_errors)} chart artifact(s) failed. "
+                "HTML files are still included; see the details below and charts/pdf_export_errors.txt in the zip."
+            )
+            with st.expander("Chart export errors", expanded=False):
+                st.code("\n\n".join(export_errors), language="text")
         st.download_button(
             "Export selected",
             data=zip_bytes,

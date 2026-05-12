@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pandas as pd
 
 from result_processor.tests.conftest import analysis_result, run_payload, write_jsonl
 from result_processor.visualization.loader import build_dataframe, build_dataframe_for_files, load_analyses, load_runs
 from result_processor.visualization.pipeline import visualize_results
-from result_processor.visualization.plots import ALL_PLOTS
+from result_processor.visualization.plots import ALL_PLOTS, CHARTS
 from result_processor.visualization.tables import ALL_TABLES
 
 
@@ -88,19 +91,32 @@ def test_table_builders_return_latex_for_analyzed_data_and_empty_for_missing_met
         assert builder(empty_metrics) == ""
 
 
-def test_visualize_results_writes_html_plots_and_latex_tables(tmp_path) -> None:
+def test_visualize_results_writes_prefixed_html_pdf_manifest_and_latex_tables(tmp_path, monkeypatch) -> None:
+    def fake_write_image(_fig, file, *args, **kwargs) -> None:
+        if hasattr(file, "write"):
+            file.write(b"%PDF-1.4\n")
+            return
+        Path(file).write_bytes(b"%PDF-1.4\n")
+
+    monkeypatch.setattr("plotly.graph_objects.Figure.write_image", fake_write_image)
     experiment_dir, analysis_dir = _write_result_files(tmp_path)
     out_dir = tmp_path / "figures"
 
     visualize_results(str(experiment_dir), str(analysis_dir), str(out_dir), formats=["html"])
 
-    assert (out_dir / "plots" / "support_by_system.html").is_file()
-    assert (out_dir / "plots" / "verdict_breakdown.html").is_file()
-    assert (out_dir / "plots" / "time_vs_answer_chars.html").is_file()
-    assert (out_dir / "plots" / "error_rate_by_system.html").is_file()
-    assert (out_dir / "plots" / "analysis_time_by_system.html").is_file()
-    assert (out_dir / "plots" / "analysis_time_by_examiner.html").is_file()
-    assert (out_dir / "plots" / "analysis_time_vs_claims.html").is_file()
-    assert (out_dir / "plots" / "analysis_time_vs_answer_chars.html").is_file()
-    assert (out_dir / "plots" / "execution_time_vs_analysis_time.html").is_file()
+    assert (out_dir / "plots" / "C01_support_by_system.html").is_file()
+    assert (out_dir / "plots" / "C01_support_by_system.pdf").is_file()
+    assert (out_dir / "plots" / "C05_time_vs_answer_chars.html").is_file()
+    assert (out_dir / "plots" / "C11_error_rate_by_system.pdf").is_file()
+    assert (out_dir / "plots" / "C19_execution_time_vs_analysis_time.html").is_file()
+    manifest = json.loads((out_dir / "charts_manifest.json").read_text(encoding="utf-8"))
+    assert len(manifest) == len(CHARTS)
+    assert manifest[0] == {
+        "id": "C01",
+        "slug": "support_by_system",
+        "lv_title": "Vidējais atbalsta īpatsvars pa sistēmām",
+        "html_file": "C01_support_by_system.html",
+        "pdf_file": "C01_support_by_system.pdf",
+        "latex_label": "fig:c01-support-by-system",
+    }
     assert (out_dir / "tables" / "per_system_summary.tex").is_file()

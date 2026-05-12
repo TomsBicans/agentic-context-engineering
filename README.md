@@ -7,6 +7,8 @@
 - Pandoc CLI tool (https://github.com/jgm/pandoc)
 - Ollama (https://github.com/ollama/ollama/releases)
     - download a model with thinking and tool support `ollama pull {model_name}` (https://ollama.com/)
+- Google Chrome for Plotly/Kaleido static PDF chart export
+    - install with `uv run --package result-processor plotly_get_chrome`, or install Chrome manually for your operating system
 
 # Setup guide
 

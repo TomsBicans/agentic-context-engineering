@@ -5,9 +5,47 @@ plotly Figure. The orchestrator decides where to save it.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Callable
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+
+
+@dataclass(frozen=True)
+class ChartSpec:
+    id: str
+    slug: str
+    lv_title: str
+    builder: Callable[[pd.DataFrame], go.Figure]
+
+    @property
+    def file_stem(self) -> str:
+        # Stable chart IDs keep filenames deterministic for LaTeX references.
+        return f"{self.id}_{self.slug}"
+
+    @property
+    def html_file(self) -> str:
+        return f"{self.file_stem}.html"
+
+    @property
+    def pdf_file(self) -> str:
+        return f"{self.file_stem}.pdf"
+
+    @property
+    def latex_label(self) -> str:
+        return f"fig:{self.id.lower()}-{self.slug.replace('_', '-')}"
+
+    def manifest_entry(self) -> dict[str, str]:
+        return {
+            "id": self.id,
+            "slug": self.slug,
+            "lv_title": self.lv_title,
+            "html_file": self.html_file,
+            "pdf_file": self.pdf_file,
+            "latex_label": self.latex_label,
+        }
 
 
 def support_rate_by_system(df: pd.DataFrame) -> go.Figure:
@@ -385,28 +423,82 @@ def execution_time_vs_analysis_time(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-# Registry — name → builder function. Used by the pipeline.
-ALL_PLOTS = {
-    "support_by_system": support_rate_by_system,
-    "support_by_corpus_system": support_rate_by_corpus_and_system,
-    "support_by_level": support_rate_by_level,
-    "time_vs_support": execution_time_vs_support,
-    "time_vs_answer_chars": execution_time_vs_answer_chars,
-    "answer_chars_by_system": answer_chars_by_system,
-    "execution_time_by_system": execution_time_by_system,
-    "tool_calls_vs_time": tool_calls_vs_execution_time,
-    "uncited_claims_by_system": uncited_claims_by_system,
-    "claims_vs_support": claims_total_vs_support,
-    "error_rate_by_system": error_rate_by_system,
-    "tool_calls_box": tool_call_distribution,
-    "verdict_breakdown": verdict_breakdown,
-    "helpfulness_box": helpfulness_distribution,
-    "analysis_time_by_system": analysis_time_by_system,
-    "analysis_time_by_examiner": analysis_time_by_examiner,
-    "analysis_time_vs_claims": analysis_time_vs_claims,
-    "analysis_time_vs_answer_chars": analysis_time_vs_answer_chars,
-    "execution_time_vs_analysis_time": execution_time_vs_analysis_time,
-}
+# Registry used by exports. Adding a chart should only require adding one
+# ChartSpec entry here; filenames and manifest rows are derived from it.
+CHARTS = (
+    ChartSpec("C01", "support_by_system", "Vidējais atbalsta īpatsvars pa sistēmām", support_rate_by_system),
+    ChartSpec(
+        "C02",
+        "support_by_corpus_system",
+        "Atbalsta īpatsvars pa korpusiem un sistēmām",
+        support_rate_by_corpus_and_system,
+    ),
+    ChartSpec("C03", "support_by_level", "Atbalsta īpatsvars pa jautājumu sarežģītības līmeņiem", support_rate_by_level),
+    ChartSpec("C04", "time_vs_support", "Izpildes laiks pret atbalsta īpatsvaru", execution_time_vs_support),
+    ChartSpec(
+        "C05",
+        "time_vs_answer_chars",
+        "Izpildes laiks pret gala atbildes garumu",
+        execution_time_vs_answer_chars,
+    ),
+    ChartSpec(
+        "C06",
+        "answer_chars_by_system",
+        "Gala atbildes garuma sadalījums pa sistēmām",
+        answer_chars_by_system,
+    ),
+    ChartSpec(
+        "C07",
+        "execution_time_by_system",
+        "Izpildes laika sadalījums pa sistēmām",
+        execution_time_by_system,
+    ),
+    ChartSpec("C08", "tool_calls_vs_time", "Rīku izsaukumi pret izpildes laiku", tool_calls_vs_execution_time),
+    ChartSpec(
+        "C09",
+        "uncited_claims_by_system",
+        "Necitēto faktisko apgalvojumu skaits pa sistēmām",
+        uncited_claims_by_system,
+    ),
+    ChartSpec("C10", "claims_vs_support", "Faktisko apgalvojumu skaits pret atbalsta īpatsvaru", claims_total_vs_support),
+    ChartSpec("C11", "error_rate_by_system", "Atbilžu kļūdu īpatsvars pa sistēmām", error_rate_by_system),
+    ChartSpec("C12", "tool_calls_box", "Rīku izsaukumu skaita sadalījums pa sistēmām", tool_call_distribution),
+    ChartSpec("C13", "verdict_breakdown", "PASS un FAIL vērtējumi pa sistēmām", verdict_breakdown),
+    ChartSpec("C14", "helpfulness_box", "Eksaminatora noderīguma vērtējums pa sistēmām", helpfulness_distribution),
+    ChartSpec(
+        "C15",
+        "analysis_time_by_system",
+        "Analīzes laika sadalījums pa sistēmām",
+        analysis_time_by_system,
+    ),
+    ChartSpec(
+        "C16",
+        "analysis_time_by_examiner",
+        "Analīzes laika sadalījums pa eksaminatora modeļiem",
+        analysis_time_by_examiner,
+    ),
+    ChartSpec("C17", "analysis_time_vs_claims", "Analīzes laiks pret faktisko apgalvojumu skaitu", analysis_time_vs_claims),
+    ChartSpec(
+        "C18",
+        "analysis_time_vs_answer_chars",
+        "Analīzes laiks pret gala atbildes garumu",
+        analysis_time_vs_answer_chars,
+    ),
+    ChartSpec(
+        "C19",
+        "execution_time_vs_analysis_time",
+        "Eksperimenta izpildes laiks pret analīzes laiku",
+        execution_time_vs_analysis_time,
+    ),
+)
+
+
+# Backward-compatible registry for UI chart selection and existing tests.
+ALL_PLOTS = {chart.slug: chart.builder for chart in CHARTS}
+
+
+def charts_manifest() -> list[dict[str, str]]:
+    return [chart.manifest_entry() for chart in CHARTS]
 
 
 def _empty(message: str) -> go.Figure:
