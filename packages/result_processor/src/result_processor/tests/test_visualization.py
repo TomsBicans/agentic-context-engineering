@@ -109,8 +109,10 @@ def test_visualize_results_writes_prefixed_html_pdf_manifest_and_latex_tables(tm
     assert (out_dir / "plots" / "C05_time_vs_answer_chars.html").is_file()
     assert (out_dir / "plots" / "C11_error_rate_by_system.pdf").is_file()
     assert (out_dir / "plots" / "C19_execution_time_vs_analysis_time.html").is_file()
+    assert (out_dir / "plots" / "C20_answer_chars_by_model_system.html").is_file()
+    assert (out_dir / "plots" / "C26_time_vs_answer_chars_by_system.pdf").is_file()
     manifest = json.loads((out_dir / "charts_manifest.json").read_text(encoding="utf-8"))
-    assert len(manifest) == len(CHARTS)
+    assert len(manifest) == len(CHARTS) == 26
     assert manifest[0] == {
         "id": "C01",
         "slug": "support_by_system",
@@ -118,5 +120,21 @@ def test_visualize_results_writes_prefixed_html_pdf_manifest_and_latex_tables(tm
         "html_file": "C01_support_by_system.html",
         "pdf_file": "C01_support_by_system.pdf",
         "latex_label": "fig:c01-support-by-system",
+    }
+    assert manifest[19] == {
+        "id": "C20",
+        "slug": "answer_chars_by_model_system",
+        "lv_title": "Gala atbildes garuma sadalījums pa A1 modeli un sistēmu",
+        "html_file": "C20_answer_chars_by_model_system.html",
+        "pdf_file": "C20_answer_chars_by_model_system.pdf",
+        "latex_label": "fig:c20-answer-chars-by-model-system",
+    }
+    assert manifest[25] == {
+        "id": "C26",
+        "slug": "time_vs_answer_chars_by_system",
+        "lv_title": "Izpildes laiks pret gala atbildes garumu pa sistēmām",
+        "html_file": "C26_time_vs_answer_chars_by_system.html",
+        "pdf_file": "C26_time_vs_answer_chars_by_system.pdf",
+        "latex_label": "fig:c26-time-vs-answer-chars-by-system",
     }
     assert (out_dir / "tables" / "per_system_summary.tex").is_file()

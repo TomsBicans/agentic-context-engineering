@@ -423,6 +423,157 @@ def execution_time_vs_analysis_time(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def answer_chars_by_model_system(df: pd.DataFrame) -> go.Figure:
+    subset = df.dropna(subset=["answer_char_count", "model", "system_name"])
+    if subset.empty:
+        return _empty("No answer_char_count / model / system_name data")
+    fig = px.box(
+        subset,
+        x="model",
+        y="answer_char_count",
+        color="system_name",
+        points="all",
+        hover_data=["question_id", "corpus"],
+        title="Final answer length distribution by A1 model and system",
+        labels={
+            "model": "A1 model",
+            "answer_char_count": "Final answer length (characters)",
+            "system_name": "System",
+        },
+    )
+    return fig
+
+
+def execution_time_by_model_system(df: pd.DataFrame) -> go.Figure:
+    subset = df.dropna(subset=["execution_time_s", "model", "system_name"])
+    if subset.empty:
+        return _empty("No execution_time_s / model / system_name data")
+    fig = px.box(
+        subset,
+        x="model",
+        y="execution_time_s",
+        color="system_name",
+        points="all",
+        hover_data=["question_id", "corpus", "answer_char_count"],
+        title="Execution time distribution by A1 model and system",
+        labels={
+            "model": "A1 model",
+            "execution_time_s": "Execution time (s)",
+            "system_name": "System",
+        },
+    )
+    return fig
+
+
+def helpfulness_by_model_system(df: pd.DataFrame) -> go.Figure:
+    subset = df.dropna(subset=["helpfulness_rating", "model", "system_name"])
+    if subset.empty:
+        return _empty("No helpfulness_rating / model / system_name data")
+    fig = px.box(
+        subset,
+        x="model",
+        y="helpfulness_rating",
+        color="system_name",
+        points="all",
+        hover_data=["question_id", "corpus", "examiner_model"],
+        title="Examiner helpfulness rating by A1 model and system",
+        labels={
+            "model": "A1 model",
+            "helpfulness_rating": "Helpfulness",
+            "system_name": "System",
+        },
+    )
+    fig.update_yaxes(range=[0.5, 5.5], dtick=1)
+    return fig
+
+
+def unsupported_claim_ratio_by_system(df: pd.DataFrame) -> go.Figure:
+    subset = df.dropna(subset=["unsupported_claim_ratio"])
+    if subset.empty:
+        return _empty("No unsupported_claim_ratio data")
+    grouped = (
+        subset.groupby("system_name", as_index=False)["unsupported_claim_ratio"]
+        .mean()
+        .sort_values("unsupported_claim_ratio", ascending=False)
+    )
+    fig = px.bar(
+        grouped,
+        x="system_name",
+        y="unsupported_claim_ratio",
+        title="Mean unsupported claim ratio per system",
+        labels={"system_name": "System", "unsupported_claim_ratio": "Unsupported claim ratio"},
+    )
+    fig.update_yaxes(range=[0, 1])
+    return fig
+
+
+def unsupported_claim_ratio_by_model_system(df: pd.DataFrame) -> go.Figure:
+    subset = df.dropna(subset=["unsupported_claim_ratio", "model", "system_name"])
+    if subset.empty:
+        return _empty("No unsupported_claim_ratio / model / system_name data")
+    grouped = (
+        subset.groupby(["model", "system_name"], as_index=False)["unsupported_claim_ratio"]
+        .mean()
+        .sort_values("unsupported_claim_ratio", ascending=False)
+    )
+    fig = px.bar(
+        grouped,
+        x="model",
+        y="unsupported_claim_ratio",
+        color="system_name",
+        barmode="group",
+        title="Mean unsupported claim ratio by A1 model and system",
+        labels={
+            "model": "A1 model",
+            "unsupported_claim_ratio": "Unsupported claim ratio",
+            "system_name": "System",
+        },
+    )
+    fig.update_yaxes(range=[0, 1])
+    return fig
+
+
+def verdict_by_model_system(df: pd.DataFrame) -> go.Figure:
+    subset = df.dropna(subset=["verdict", "model", "system_name"])
+    if subset.empty:
+        return _empty("No verdict / model / system_name data")
+    grouped = (
+        subset.groupby(["model", "system_name", "verdict"], as_index=False)
+        .size()
+        .rename(columns={"size": "count"})
+    )
+    fig = px.bar(
+        grouped,
+        x="model",
+        y="count",
+        color="verdict",
+        facet_col="system_name",
+        title="PASS / FAIL verdicts by A1 model and system",
+        labels={"model": "A1 model", "count": "Run count", "verdict": "Verdict", "system_name": "System"},
+    )
+    return fig
+
+
+def time_vs_answer_chars_by_system(df: pd.DataFrame) -> go.Figure:
+    subset = df.dropna(subset=["execution_time_s", "answer_char_count", "system_name"])
+    if subset.empty:
+        return _empty("No execution_time / answer_char_count / system_name data")
+    fig = px.scatter(
+        subset,
+        x="answer_char_count",
+        y="execution_time_s",
+        color="system_name",
+        hover_data=["question_id", "model", "corpus", "has_answer_error"],
+        title="Execution time vs final answer length by system",
+        labels={
+            "answer_char_count": "Final answer length (characters)",
+            "execution_time_s": "Execution time (s)",
+            "system_name": "System",
+        },
+    )
+    return fig
+
+
 # Registry used by exports. Adding a chart should only require adding one
 # ChartSpec entry here; filenames and manifest rows are derived from it.
 CHARTS = (
@@ -489,6 +640,48 @@ CHARTS = (
         "execution_time_vs_analysis_time",
         "Eksperimenta izpildes laiks pret analīzes laiku",
         execution_time_vs_analysis_time,
+    ),
+    ChartSpec(
+        "C20",
+        "answer_chars_by_model_system",
+        "Gala atbildes garuma sadalījums pa A1 modeli un sistēmu",
+        answer_chars_by_model_system,
+    ),
+    ChartSpec(
+        "C21",
+        "execution_time_by_model_system",
+        "Izpildes laika sadalījums pa A1 modeli un sistēmu",
+        execution_time_by_model_system,
+    ),
+    ChartSpec(
+        "C22",
+        "helpfulness_by_model_system",
+        "A2 noderīguma vērtējuma sadalījums pa A1 modeli un sistēmu",
+        helpfulness_by_model_system,
+    ),
+    ChartSpec(
+        "C23",
+        "unsupported_claim_ratio_by_system",
+        "Nepamatoto apgalvojumu īpatsvars pa sistēmām",
+        unsupported_claim_ratio_by_system,
+    ),
+    ChartSpec(
+        "C24",
+        "unsupported_claim_ratio_by_model_system",
+        "Nepamatoto apgalvojumu īpatsvars pa A1 modeli un sistēmu",
+        unsupported_claim_ratio_by_model_system,
+    ),
+    ChartSpec(
+        "C25",
+        "verdict_by_model_system",
+        "PASS un FAIL vērtējumi pa A1 modeli un sistēmu",
+        verdict_by_model_system,
+    ),
+    ChartSpec(
+        "C26",
+        "time_vs_answer_chars_by_system",
+        "Izpildes laiks pret gala atbildes garumu pa sistēmām",
+        time_vs_answer_chars_by_system,
     ),
 )
 

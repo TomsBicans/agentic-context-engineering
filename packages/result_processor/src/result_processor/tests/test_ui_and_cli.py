@@ -421,6 +421,10 @@ def test_create_analysis_export_zip_includes_suite_analysis_and_charts(tmp_path,
     assert "charts/C05_time_vs_answer_chars.pdf" in names
     assert "charts/C11_error_rate_by_system.html" in names
     assert "charts/C11_error_rate_by_system.pdf" in names
+    assert "charts/C20_answer_chars_by_model_system.html" in names
+    assert "charts/C20_answer_chars_by_model_system.pdf" in names
+    assert "charts/C26_time_vs_answer_chars_by_system.html" in names
+    assert "charts/C26_time_vs_answer_chars_by_system.pdf" in names
     assert "experiment_data/analysis-a/run.jsonl" in names
     assert "analysis_results/analysis-a/run.jsonl" in names
 
@@ -504,9 +508,9 @@ def test_create_analysis_export_zip_reports_progress(tmp_path, monkeypatch) -> N
         progress_callback=lambda current, total, label: progress_updates.append((current, total, label)),
     )
 
-    assert progress_updates[0] == (0, 57, "Preparing chart export")
-    assert progress_updates[-1] == (57, 57, "Exported PDF for C19 execution_time_vs_analysis_time")
-    assert any(update == (2, 57, "Exported HTML for C01 support_by_system") for update in progress_updates)
+    assert progress_updates[0] == (0, 78, "Preparing chart export")
+    assert progress_updates[-1] == (78, 78, "Exported PDF for C26 time_vs_answer_chars_by_system")
+    assert any(update == (2, 78, "Exported HTML for C01 support_by_system") for update in progress_updates)
 
 
 def test_run_id_from_result_path_reads_first_valid_jsonl_row(tmp_path) -> None:
