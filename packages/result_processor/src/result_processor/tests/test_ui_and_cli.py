@@ -589,6 +589,8 @@ def test_run_id_from_result_path_reads_first_valid_jsonl_row(tmp_path) -> None:
 
     assert ui._run_id_from_result_path(str(path)) == "run-123"
     assert ui._run_id_from_result_path(str(tmp_path / "missing.jsonl")) is None
+    assert ui._run_id_from_result_path(float("nan")) is None
+    assert ui._run_from_result_path(float("nan")) is None
 
 
 def test_dataframe_for_single_run_contains_detail_fields(tmp_path) -> None:

@@ -1482,13 +1482,17 @@ def _render_inline_analysis_charts(analysis_df: pd.DataFrame, key: str = "analys
         st.plotly_chart(ALL_PLOTS[name](analysis_df), width="stretch", key=f"{key}_{name}")
 
 
+def _is_valid_path_value(value) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
 def _run_id_from_result_path(result_path: str | None) -> str | None:
     run = _run_from_result_path(result_path)
     return run.run_id if run else None
 
 
-def _run_from_result_path(result_path: str | None) -> RunResult | None:
-    if not result_path:
+def _run_from_result_path(result_path) -> RunResult | None:
+    if not _is_valid_path_value(result_path):
         return None
     path = Path(result_path)
     if not path.is_file():
@@ -1605,7 +1609,7 @@ def _render_suite_progress(state_path: Path, df: pd.DataFrame, analyses, runs) -
             if run_id and not df.empty and run_id in set(df["run_id"]):
                 st.divider()
                 _render_run_details(df, analyses, runs, run_id)
-            elif selected.get("result_path"):
+            elif _is_valid_path_value(selected.get("result_path")):
                 run = _run_from_result_path(selected.get("result_path"))
                 if run is None:
                     st.warning("The selected task result file could not be read.")
