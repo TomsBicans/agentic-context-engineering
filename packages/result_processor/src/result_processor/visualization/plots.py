@@ -13,6 +13,13 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 
+_COLOR_SEQUENCE = (
+    px.colors.qualitative.Safe
+    + px.colors.qualitative.Bold
+    + px.colors.qualitative.Plotly
+)
+
+
 @dataclass(frozen=True)
 class ChartSpec:
     id: str
@@ -48,6 +55,25 @@ class ChartSpec:
         }
 
 
+def _category_values(df: pd.DataFrame, column: str) -> list[str]:
+    if column not in df:
+        return []
+    return sorted(str(value) for value in df[column].dropna().unique())
+
+
+def _category_orders(df: pd.DataFrame, *columns: str) -> dict[str, list[str]]:
+    return {column: values for column in columns if (values := _category_values(df, column))}
+
+
+def _color_map(df: pd.DataFrame, column: str) -> dict[str, str]:
+    # Stable per-chart color assignment: sorted legend values always map to the
+    # same qualitative palette positions, avoiding grayscale/ambiguous exports.
+    return {
+        value: _COLOR_SEQUENCE[index % len(_COLOR_SEQUENCE)]
+        for index, value in enumerate(_category_values(df, column))
+    }
+
+
 def support_rate_by_system(df: pd.DataFrame) -> go.Figure:
     grouped = (
         df.dropna(subset=["support_rate"])
@@ -59,10 +85,14 @@ def support_rate_by_system(df: pd.DataFrame) -> go.Figure:
         grouped,
         x="system_name",
         y="support_rate",
+        color="system_name",
+        color_discrete_map=_color_map(grouped, "system_name"),
+        category_orders=_category_orders(grouped, "system_name"),
         title="Mean support rate per system",
         labels={"system_name": "System", "support_rate": "Support rate"},
     )
     fig.update_yaxes(range=[0, 1])
+    fig.update_layout(showlegend=False)
     return fig
 
 
@@ -77,6 +107,8 @@ def support_rate_by_corpus_and_system(df: pd.DataFrame) -> go.Figure:
         x="corpus",
         y="support_rate",
         color="system_name",
+        color_discrete_map=_color_map(grouped, "system_name"),
+        category_orders=_category_orders(grouped, "system_name"),
         barmode="group",
         title="Support rate per corpus, grouped by system",
         labels={"corpus": "Corpus", "support_rate": "Support rate", "system_name": "System"},
@@ -99,6 +131,8 @@ def support_rate_by_level(df: pd.DataFrame) -> go.Figure:
         x="level",
         y="support_rate",
         color="system_name",
+        color_discrete_map=_color_map(grouped, "system_name"),
+        category_orders=_category_orders(grouped, "system_name"),
         markers=True,
         title="Support rate by question difficulty level",
         labels={"level": "Difficulty level", "support_rate": "Support rate", "system_name": "System"},
@@ -117,6 +151,8 @@ def execution_time_vs_support(df: pd.DataFrame) -> go.Figure:
         x="execution_time_s",
         y="support_rate",
         color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "system_name"),
         symbol="corpus",
         hover_data=["question_id", "model"],
         title="Execution time vs support rate",
@@ -135,6 +171,8 @@ def execution_time_vs_answer_chars(df: pd.DataFrame) -> go.Figure:
         x="answer_char_count",
         y="execution_time_s",
         color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "system_name"),
         symbol="corpus",
         hover_data=["question_id", "model", "has_answer_error"],
         title="Execution time vs final answer length",
@@ -157,6 +195,8 @@ def answer_chars_by_system(df: pd.DataFrame) -> go.Figure:
         x="system_name",
         y="answer_char_count",
         color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "system_name"),
         points="all",
         hover_data=["question_id", "model"],
         title="Final answer length distribution by system",
@@ -175,6 +215,8 @@ def execution_time_by_system(df: pd.DataFrame) -> go.Figure:
         x="system_name",
         y="execution_time_s",
         color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "system_name"),
         points="all",
         hover_data=["question_id", "model", "answer_char_count"],
         title="Execution time distribution by system",
@@ -193,6 +235,8 @@ def tool_calls_vs_execution_time(df: pd.DataFrame) -> go.Figure:
         x="tool_call_count",
         y="execution_time_s",
         color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "system_name"),
         symbol="corpus",
         hover_data=["question_id", "model", "answer_char_count"],
         title="Tool calls vs execution time",
@@ -215,6 +259,8 @@ def uncited_claims_by_system(df: pd.DataFrame) -> go.Figure:
         x="system_name",
         y="claims_without_citation_count",
         color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "system_name"),
         points="all",
         hover_data=["question_id", "model", "claims_total"],
         title="Uncited factual claims by system",
@@ -236,6 +282,8 @@ def claims_total_vs_support(df: pd.DataFrame) -> go.Figure:
         x="claims_total",
         y="support_rate",
         color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "system_name"),
         symbol="corpus",
         hover_data=["question_id", "model", "claims_without_citation_count"],
         title="Total claims vs support rate",
@@ -263,10 +311,14 @@ def error_rate_by_system(df: pd.DataFrame) -> go.Figure:
         grouped,
         x="system_name",
         y="answer_error_rate",
+        color="system_name",
+        color_discrete_map=_color_map(grouped, "system_name"),
+        category_orders=_category_orders(grouped, "system_name"),
         title="Answer-error rate by system",
         labels={"system_name": "System", "answer_error_rate": "Answer-error rate"},
     )
     fig.update_yaxes(range=[0, 1])
+    fig.update_layout(showlegend=False)
     return fig
 
 
@@ -278,10 +330,14 @@ def tool_call_distribution(df: pd.DataFrame) -> go.Figure:
         subset,
         x="system_name",
         y="tool_call_count",
+        color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "system_name"),
         points="all",
         title="Tool-call count distribution by system",
         labels={"system_name": "System", "tool_call_count": "Tool calls"},
     )
+    fig.update_layout(showlegend=False)
     return fig
 
 
@@ -299,6 +355,8 @@ def verdict_breakdown(df: pd.DataFrame) -> go.Figure:
         x="system_name",
         y="count",
         color="verdict",
+        color_discrete_map=_color_map(grouped, "verdict"),
+        category_orders=_category_orders(grouped, "verdict"),
         title="PASS / FAIL verdicts per system",
         labels={"system_name": "System", "count": "Run count", "verdict": "Verdict"},
     )
@@ -313,11 +371,15 @@ def helpfulness_distribution(df: pd.DataFrame) -> go.Figure:
         subset,
         x="system_name",
         y="helpfulness_rating",
+        color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "system_name"),
         points="all",
         title="Examiner helpfulness rating (Likert 1–5) per system",
         labels={"system_name": "System", "helpfulness_rating": "Helpfulness"},
     )
     fig.update_yaxes(range=[0.5, 5.5], dtick=1)
+    fig.update_layout(showlegend=False)
     return fig
 
 
@@ -330,6 +392,8 @@ def analysis_time_by_system(df: pd.DataFrame) -> go.Figure:
         x="system_name",
         y="analysis_time_s",
         color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "system_name"),
         points="all",
         hover_data=["question_id", "model", "examiner_model", "claims_total"],
         title="Analysis time distribution by system",
@@ -348,6 +412,8 @@ def analysis_time_by_examiner(df: pd.DataFrame) -> go.Figure:
         x="examiner_model",
         y="analysis_time_s",
         color="examiner_model",
+        color_discrete_map=_color_map(subset, "examiner_model"),
+        category_orders=_category_orders(subset, "examiner_model"),
         points="all",
         hover_data=["question_id", "system_name", "model", "claims_total"],
         title="Analysis time distribution by examiner model",
@@ -366,6 +432,8 @@ def analysis_time_vs_claims(df: pd.DataFrame) -> go.Figure:
         x="claims_total",
         y="analysis_time_s",
         color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "system_name"),
         symbol="corpus",
         hover_data=["question_id", "model", "examiner_model", "support_rate"],
         title="Analysis time vs total factual claims",
@@ -388,6 +456,8 @@ def analysis_time_vs_answer_chars(df: pd.DataFrame) -> go.Figure:
         x="answer_char_count",
         y="analysis_time_s",
         color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "system_name"),
         symbol="corpus",
         hover_data=["question_id", "model", "examiner_model", "claims_total"],
         title="Analysis time vs final answer length",
@@ -410,6 +480,8 @@ def execution_time_vs_analysis_time(df: pd.DataFrame) -> go.Figure:
         x="execution_time_s",
         y="analysis_time_s",
         color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "system_name"),
         symbol="corpus",
         hover_data=["question_id", "model", "examiner_model", "claims_total"],
         title="Experiment execution time vs analysis time",
@@ -432,6 +504,8 @@ def answer_chars_by_model_system(df: pd.DataFrame) -> go.Figure:
         x="model",
         y="answer_char_count",
         color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "model", "system_name"),
         points="all",
         hover_data=["question_id", "corpus"],
         title="Final answer length distribution by A1 model and system",
@@ -453,6 +527,8 @@ def execution_time_by_model_system(df: pd.DataFrame) -> go.Figure:
         x="model",
         y="execution_time_s",
         color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "model", "system_name"),
         points="all",
         hover_data=["question_id", "corpus", "answer_char_count"],
         title="Execution time distribution by A1 model and system",
@@ -474,6 +550,8 @@ def helpfulness_by_model_system(df: pd.DataFrame) -> go.Figure:
         x="model",
         y="helpfulness_rating",
         color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "model", "system_name"),
         points="all",
         hover_data=["question_id", "corpus", "examiner_model"],
         title="Examiner helpfulness rating by A1 model and system",
@@ -500,10 +578,14 @@ def unsupported_claim_ratio_by_system(df: pd.DataFrame) -> go.Figure:
         grouped,
         x="system_name",
         y="unsupported_claim_ratio",
+        color="system_name",
+        color_discrete_map=_color_map(grouped, "system_name"),
+        category_orders=_category_orders(grouped, "system_name"),
         title="Mean unsupported claim ratio per system",
         labels={"system_name": "System", "unsupported_claim_ratio": "Unsupported claim ratio"},
     )
     fig.update_yaxes(range=[0, 1])
+    fig.update_layout(showlegend=False)
     return fig
 
 
@@ -521,6 +603,8 @@ def unsupported_claim_ratio_by_model_system(df: pd.DataFrame) -> go.Figure:
         x="model",
         y="unsupported_claim_ratio",
         color="system_name",
+        color_discrete_map=_color_map(grouped, "system_name"),
+        category_orders=_category_orders(grouped, "model", "system_name"),
         barmode="group",
         title="Mean unsupported claim ratio by A1 model and system",
         labels={
@@ -547,6 +631,8 @@ def verdict_by_model_system(df: pd.DataFrame) -> go.Figure:
         x="model",
         y="count",
         color="verdict",
+        color_discrete_map=_color_map(grouped, "verdict"),
+        category_orders=_category_orders(grouped, "model", "system_name", "verdict"),
         facet_col="system_name",
         title="PASS / FAIL verdicts by A1 model and system",
         labels={"model": "A1 model", "count": "Run count", "verdict": "Verdict", "system_name": "System"},
@@ -563,6 +649,8 @@ def time_vs_answer_chars_by_system(df: pd.DataFrame) -> go.Figure:
         x="answer_char_count",
         y="execution_time_s",
         color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "system_name"),
         hover_data=["question_id", "model", "corpus", "has_answer_error"],
         title="Execution time vs final answer length by system",
         labels={

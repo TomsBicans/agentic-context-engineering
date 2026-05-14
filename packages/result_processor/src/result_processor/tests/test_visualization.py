@@ -80,6 +80,52 @@ def test_plot_builders_return_figures_for_populated_and_empty_inputs(tmp_path) -
         assert hasattr(fig, "to_dict")
 
 
+def test_system_color_mapping_is_distinct_and_stable_across_charts() -> None:
+    df = pd.DataFrame(
+        [
+            {
+                "system_name": "chatgpt_codex",
+                "model": "qwen3:4b",
+                "corpus": "solar_system_wiki",
+                "question_id": "q1",
+                "answer_char_count": 100,
+                "execution_time_s": 10,
+                "support_rate": 0.1,
+            },
+            {
+                "system_name": "ace",
+                "model": "qwen3:4b",
+                "corpus": "solar_system_wiki",
+                "question_id": "q2",
+                "answer_char_count": 200,
+                "execution_time_s": 20,
+                "support_rate": 0.2,
+            },
+            {
+                "system_name": "anythingllm",
+                "model": "qwen3:4b",
+                "corpus": "solar_system_wiki",
+                "question_id": "q3",
+                "answer_char_count": 300,
+                "execution_time_s": 30,
+                "support_rate": 0.3,
+            },
+        ]
+    )
+
+    answer_fig = ALL_PLOTS["answer_chars_by_model_system"](df)
+    time_fig = ALL_PLOTS["execution_time_by_model_system"](df)
+    support_fig = ALL_PLOTS["support_by_system"](df)
+
+    answer_colors = {trace.name: trace.marker.color for trace in answer_fig.data}
+    time_colors = {trace.name: trace.marker.color for trace in time_fig.data}
+    support_colors = {trace.name: trace.marker.color for trace in support_fig.data}
+    assert len(set(answer_colors.values())) == 3
+    assert answer_colors == time_colors
+    assert answer_colors == support_colors
+    assert support_fig.layout.showlegend is False
+
+
 def test_table_builders_return_latex_for_analyzed_data_and_empty_for_missing_metrics(tmp_path) -> None:
     experiment_dir, analysis_dir = _write_result_files(tmp_path)
     df = build_dataframe(experiment_dir, analysis_dir)
