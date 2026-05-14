@@ -19,6 +19,20 @@ _TIMEOUT_SECONDS = 180
 # Ollama local provider identifier passed to the Codex CLI.
 _LOCAL_PROVIDER = "ollama"
 
+
+def build_codex_command(*, model: str, prompt: str) -> list[str]:
+    return [
+        "codex", "exec",
+        "--oss",
+        "--local-provider", _LOCAL_PROVIDER,
+        "-m", model,
+        "--sandbox", "read-only",
+        "--skip-git-repo-check",
+        "--json",
+        prompt,
+    ]
+
+
 class GptCodexLocalRunner(BaseRunner):
     """Runner for the OpenAI Codex CLI baseline against a local Ollama model.
 
@@ -123,16 +137,7 @@ class GptCodexLocalRunner(BaseRunner):
         return f"{EXAMINEE_SYSTEM_MESSAGE}\n\nQuestion:\n{question}"
 
     def _invoke_codex(self, prompt: str, workspace: Path) -> subprocess.CompletedProcess:
-        cmd = [
-            "codex", "exec",
-            "--oss",
-            "--local-provider", _LOCAL_PROVIDER,
-            "-m", self.config.model,
-            "--sandbox", "read-only",
-            "--skip-git-repo-check",
-            "--json",
-            prompt,
-        ]
+        cmd = build_codex_command(model=self.config.model, prompt=prompt)
 
         env = os.environ.copy()
         # Strip vars set by an outer Claude Code session so the inner process

@@ -21,6 +21,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from agent.prompts import EXAMINEE_SYSTEM_MESSAGE
 from experiment_runner.commands.suite import (
     build_suite_tasks,
     load_suite_config,
@@ -38,6 +39,10 @@ from experiment_runner.models.suite import (
     suite_slug,
 )
 from experiment_runner.runners.registry import DISABLED_SYSTEMS, SYSTEM_AUTOMATION_LEVELS
+from experiment_runner.runners.baseline.anythingllm import build_anythingllm_prompt_command
+from experiment_runner.runners.baseline.claudecodelocal import build_claude_command, claude_environment_overrides
+from experiment_runner.runners.baseline.clawcode import build_claw_command, claw_environment_overrides
+from experiment_runner.runners.baseline.gptcodexlocal import build_codex_command
 from result_processor.commands.analysis_job import (
     build_analysis_job_state,
     load_analysis_job_state,
@@ -214,6 +219,93 @@ def _shell_command(args: list[str]) -> str:
 def _render_shell_command_preview(command: str) -> None:
     st.markdown("Shell command")
     st.code(command, language="bash")
+
+
+def _examinee_prompt(question: str) -> str:
+    return f"{EXAMINEE_SYSTEM_MESSAGE}\n\nQuestion:\n{question}"
+
+
+def _build_direct_system_invocation_preview(
+    *,
+    system: str,
+    corpus: str,
+    model: str,
+    question_text: str,
+) -> dict[str, object] | None:
+    """Mirror the external CLI subprocess command used by system runners."""
+    prompt = _examinee_prompt(question_text)
+    if system == SystemName.CHATGPT_CODEX.value:
+        return {
+            "command": build_codex_command(model=model, prompt=prompt),
+            "cwd": "temporary per-question workspace containing ./corpus -> selected corpus path",
+            "notes": [
+                "The runner strips nested-agent environment variables before invoking Codex.",
+            ],
+        }
+    if system == SystemName.CLAWCODE.value:
+        return {
+            "command": build_claw_command(model=model, prompt=prompt),
+            "cwd": "temporary per-question workspace containing ./corpus -> selected corpus path",
+            "environment": claw_environment_overrides(),
+            "notes": [
+                "ANTHROPIC_API_KEY and DASHSCOPE_API_KEY are removed before invocation.",
+            ],
+        }
+    if system == SystemName.CLAUDE_CODE_LOCAL.value:
+        return {
+            "command": build_claude_command(model=model, prompt=prompt),
+            "cwd": "temporary per-question workspace containing ./corpus -> selected corpus path",
+            "environment": claude_environment_overrides(),
+            "notes": [
+                "OPENAI_BASE_URL, OPENAI_API_KEY, and nested-agent environment variables are removed before invocation.",
+            ],
+        }
+    if system == SystemName.ANYTHINGLLM.value:
+        return {
+            "command": build_anythingllm_prompt_command(prompt=prompt, workspace=corpus),
+            "cwd": "dashboard / experiment-runner working directory",
+            "notes": [
+                "AnythingLLM setup starts the Docker container separately before this query command runs.",
+            ],
+        }
+    return None
+
+
+def _render_direct_system_invocation_preview(
+    *,
+    system: str,
+    corpus: str,
+    model: str,
+    selected_ids: list[str],
+    available_ids: list[str],
+    questions_meta: dict[str, str],
+) -> None:
+    preview_id = selected_ids[0] if selected_ids else available_ids[0] if available_ids else None
+    question_text = questions_meta.get(preview_id or "", "<question text>")
+    preview = _build_direct_system_invocation_preview(
+        system=system,
+        corpus=corpus,
+        model=model,
+        question_text=question_text,
+    )
+    with st.expander("Direct system CLI command", expanded=False):
+        if preview is None:
+            st.info("This system is invoked in-process or manually, so there is no external system CLI command to preview.")
+            return
+        st.caption(
+            f"Preview for `{preview_id or 'selected question'}`. The experiment runner repeats this pattern per question."
+        )
+        if cwd := preview.get("cwd"):
+            st.markdown(f"**Working directory:** `{cwd}`")
+        environment = preview.get("environment")
+        if isinstance(environment, dict) and environment:
+            st.markdown("**Environment overrides:**")
+            st.code("\n".join(f"{key}={value}" for key, value in environment.items()), language="bash")
+        st.markdown("**Command:**")
+        st.code(_shell_command(preview["command"]), language="bash")
+        notes = preview.get("notes")
+        if isinstance(notes, list) and notes:
+            st.caption(" ".join(str(note) for note in notes))
 
 
 def _parse_ollama_list(output: str) -> list[str]:
@@ -1955,6 +2047,14 @@ def _render_run_experiment_form(cfg: dict) -> None:
         dry_run=dry_run,
     )
     _render_shell_command_preview(_shell_command(args))
+    _render_direct_system_invocation_preview(
+        system=system,
+        corpus=corpus,
+        model=model,
+        selected_ids=selected_ids,
+        available_ids=available_ids,
+        questions_meta=questions_meta,
+    )
 
     cols = st.columns([3, 1])
     cols[0].caption(

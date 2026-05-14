@@ -25,6 +25,30 @@ _ALLOWED_TOOLS = "read_file,glob_search,grep_search"
 _OLLAMA_BASE_URL = "http://localhost:11434"
 _OLLAMA_API_KEY = "ollama"
 
+
+def build_claude_command(*, model: str, prompt: str) -> list[str]:
+    return [
+        "claude",
+        "--model",
+        model,
+        "--output-format",
+        "json",
+        "--permission-mode",
+        "bypassPermissions",
+        "--allowedTools",
+        _ALLOWED_TOOLS,
+        "-p",
+        prompt,
+    ]
+
+
+def claude_environment_overrides() -> dict[str, str]:
+    return {
+        "ANTHROPIC_BASE_URL": _OLLAMA_BASE_URL,
+        "ANTHROPIC_API_KEY": _OLLAMA_API_KEY,
+    }
+
+
 class ClaudeCodeLocalRunner(BaseRunner):
     """Runner for the Claude Code CLI baseline against a local Ollama model.
 
@@ -136,27 +160,10 @@ class ClaudeCodeLocalRunner(BaseRunner):
         return f"{EXAMINEE_SYSTEM_MESSAGE}\n\nQuestion:\n{question}"
 
     def _invoke_claude(self, prompt: str, workspace: Path) -> subprocess.CompletedProcess:
-        # Claude Code requires the "ollama/" provider prefix ("ollama/qwen3:4b")
-        # when routing through a local Ollama instance.
-        model = self.config.model
-
-        cmd = [
-            "claude",
-            "--model",
-            model,
-            "--output-format",
-            "json",
-            "--permission-mode",
-            "bypassPermissions",
-            "--allowedTools",
-            _ALLOWED_TOOLS,
-            "-p",
-            prompt,
-        ]
+        cmd = build_claude_command(model=self.config.model, prompt=prompt)
 
         env = os.environ.copy()
-        env["ANTHROPIC_BASE_URL"] = _OLLAMA_BASE_URL
-        env["ANTHROPIC_API_KEY"] = _OLLAMA_API_KEY
+        env.update(claude_environment_overrides())
         env.pop("OPENAI_BASE_URL", None)
         env.pop("OPENAI_API_KEY", None)
         # Strip vars set by an outer Claude Code session so the inner `claude`

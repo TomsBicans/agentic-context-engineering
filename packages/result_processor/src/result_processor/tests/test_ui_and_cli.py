@@ -105,6 +105,76 @@ def test_build_experiment_run_args_includes_selected_options(monkeypatch) -> Non
     ]
 
 
+def test_direct_system_invocation_preview_for_codex() -> None:
+    preview = ui._build_direct_system_invocation_preview(
+        system=SystemName.CHATGPT_CODEX.value,
+        corpus=Corpus.SOLAR_SYSTEM_WIKI.value,
+        model="qwen3:4b",
+        question_text="What is Mars?",
+    )
+
+    assert preview is not None
+    command = preview["command"]
+    assert command[:5] == ["codex", "exec", "--oss", "--local-provider", "ollama"]
+    assert "-m" in command
+    assert "qwen3:4b" in command
+    assert "--json" in command
+    assert str(command[-1]).endswith("Question:\nWhat is Mars?")
+
+
+def test_direct_system_invocation_preview_for_clawcode_prefixes_model_and_env() -> None:
+    preview = ui._build_direct_system_invocation_preview(
+        system=SystemName.CLAWCODE.value,
+        corpus=Corpus.SOLAR_SYSTEM_WIKI.value,
+        model="qwen3:4b",
+        question_text="What is Mars?",
+    )
+
+    assert preview is not None
+    command = preview["command"]
+    assert command[:3] == ["claw", "--model", "openai/qwen3:4b"]
+    assert "--allowedTools" in command
+    assert preview["environment"]["OPENAI_BASE_URL"] == "http://127.0.0.1:11434/v1"
+
+
+def test_direct_system_invocation_preview_for_claude_code_local() -> None:
+    preview = ui._build_direct_system_invocation_preview(
+        system=SystemName.CLAUDE_CODE_LOCAL.value,
+        corpus=Corpus.SOLAR_SYSTEM_WIKI.value,
+        model="qwen3:4b",
+        question_text="What is Mars?",
+    )
+
+    assert preview is not None
+    command = preview["command"]
+    assert command[:3] == ["claude", "--model", "qwen3:4b"]
+    assert "-p" in command
+    assert preview["environment"]["ANTHROPIC_BASE_URL"] == "http://localhost:11434"
+
+
+def test_direct_system_invocation_preview_for_anythingllm() -> None:
+    preview = ui._build_direct_system_invocation_preview(
+        system=SystemName.ANYTHINGLLM.value,
+        corpus=Corpus.SOLAR_SYSTEM_WIKI.value,
+        model="qwen3:4b",
+        question_text="What is Mars?",
+    )
+
+    assert preview is not None
+    command = preview["command"]
+    assert command[:2] == ["any", "prompt"]
+    assert command[-3:] == [Corpus.SOLAR_SYSTEM_WIKI.value, "--nt", "--no-stream"]
+
+
+def test_direct_system_invocation_preview_returns_none_for_ace() -> None:
+    assert ui._build_direct_system_invocation_preview(
+        system=SystemName.ACE.value,
+        corpus=Corpus.SOLAR_SYSTEM_WIKI.value,
+        model="qwen3:4b",
+        question_text="What is Mars?",
+    ) is None
+
+
 def test_build_suite_run_and_cancel_args(monkeypatch) -> None:
     monkeypatch.setattr(ui.sys, "executable", "/usr/bin/python")
 
