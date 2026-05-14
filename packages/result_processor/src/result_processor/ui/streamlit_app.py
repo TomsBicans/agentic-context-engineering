@@ -999,6 +999,43 @@ def _create_analysis_export_zip(
     return buffer.getvalue()
 
 
+def _file_signature(path: Path) -> dict:
+    if not path.is_file():
+        return {"path": str(path), "exists": False}
+    stat = path.stat()
+    return {
+        "path": str(path),
+        "exists": True,
+        "mtime_ns": stat.st_mtime_ns,
+        "size": stat.st_size,
+    }
+
+
+def _analysis_export_signature(suite_record: dict, analysis_records: list[dict], analysis_df: pd.DataFrame) -> str:
+    """Return a stable signature for the selected export input files."""
+    payload = {
+        "suite": {
+            "suite_id": suite_record.get("suite_id"),
+            "suite_name": suite_record.get("suite_name"),
+            "state_path": _file_signature(suite_record["state_path"]),
+            "config_path": _file_signature(suite_record["config_path"]),
+        },
+        "analyses": [
+            {
+                "analysis_name": record["analysis_name"],
+                "analysis_dir": str(record["analysis_dir"]),
+                "result_files": [_file_signature(Path(path)) for path in record["result_files"]],
+                "analysis_files": [_file_signature(Path(path)) for path in record["analysis_files"]],
+                "meta": _file_signature(record["analysis_dir"] / "analysis.meta.json"),
+            }
+            for record in analysis_records
+        ],
+        "rows": len(analysis_df),
+        "run_ids": sorted(str(run_id) for run_id in analysis_df.get("run_id", pd.Series(dtype=str)).dropna()),
+    }
+    return json.dumps(payload, sort_keys=True)
+
+
 def _analysis_job_paths(analysis_root: Path, analysis_name: str) -> tuple[Path, Path, Path]:
     slug = suite_slug(analysis_name)
     output_dir = analysis_root / slug
@@ -1270,36 +1307,61 @@ def _render_suite_centric_analysis_results(cfg: dict, runs) -> None:
             _render_run_details(analysis_df, load_analyses(analysis_dir), runs, row["run_id"])
 
     if selected_records and not analysis_df.empty:
-        export_errors: list[str] = []
-        with st.status("Preparing export zip", expanded=True) as export_status:
-            export_progress = st.progress(0.0, text="Starting chart export")
+        export_signature = _analysis_export_signature(selected_suite, selected_records, analysis_df)
+        export_state_key = "suite_analysis_export_zip"
+        export_state = st.session_state.get(export_state_key)
+        export_ready = isinstance(export_state, dict) and export_state.get("signature") == export_signature
 
-            def update_export_progress(current: int, total: int, label: str) -> None:
-                export_progress.progress(min(current / max(total, 1), 1.0), text=f"{current}/{total} - {label}")
-
-            zip_bytes = _create_analysis_export_zip(
-                selected_suite,
-                selected_records,
-                analysis_df,
-                export_errors,
-                update_export_progress,
-            )
-            export_progress.progress(1.0, text="Export zip ready")
-            export_status.update(label="Export zip ready", state="complete", expanded=False)
-        if export_errors:
-            st.warning(
-                f"Export completed, but {len(export_errors)} chart artifact(s) failed. "
-                "HTML files are still included; see the details below and charts/pdf_export_errors.txt in the zip."
-            )
-            with st.expander("Chart export errors", expanded=False):
-                st.code("\n\n".join(export_errors), language="text")
-        st.download_button(
-            "Export selected",
-            data=zip_bytes,
-            file_name=f"{suite_slug(selected_suite['suite_name'])}-analysis-export.zip",
-            mime="application/zip",
+        if st.button(
+            "Build export zip",
+            type="primary",
             width="stretch",
-        )
+            help="Generate CSV, HTML charts, PDF charts, raw experiment JSONL, and analysis JSONL for the selected analyses.",
+        ):
+            export_errors: list[str] = []
+            with st.status("Preparing export zip", expanded=True) as export_status:
+                export_progress = st.progress(0.0, text="Starting chart export")
+
+                def update_export_progress(current: int, total: int, label: str) -> None:
+                    export_progress.progress(min(current / max(total, 1), 1.0), text=f"{current}/{total} - {label}")
+
+                zip_bytes = _create_analysis_export_zip(
+                    selected_suite,
+                    selected_records,
+                    analysis_df,
+                    export_errors,
+                    update_export_progress,
+                )
+                export_progress.progress(1.0, text="Export zip ready")
+                export_status.update(label="Export zip ready", state="complete", expanded=False)
+            st.session_state[export_state_key] = {
+                "signature": export_signature,
+                "bytes": zip_bytes,
+                "errors": export_errors,
+                "file_name": f"{suite_slug(selected_suite['suite_name'])}-analysis-export.zip",
+            }
+            export_state = st.session_state[export_state_key]
+            export_ready = True
+
+        if export_ready:
+            export_errors = export_state.get("errors", [])
+            if export_errors:
+                st.warning(
+                    f"Export completed, but {len(export_errors)} chart artifact(s) failed. "
+                    "HTML files are still included; see the details below and charts/pdf_export_errors.txt in the zip."
+                )
+                with st.expander("Chart export errors", expanded=False):
+                    st.code("\n\n".join(export_errors), language="text")
+            st.download_button(
+                "Download export zip",
+                data=export_state["bytes"],
+                file_name=export_state["file_name"],
+                mime="application/zip",
+                width="stretch",
+                on_click="ignore",
+            )
+        else:
+            st.caption("Export zip is generated only when you press Build export zip.")
     _render_inline_analysis_charts(analysis_df, key="suite_centric_analysis_charts")
 
     unlinked = [record for record in analysis_records if record.get("suite_key") is None]
