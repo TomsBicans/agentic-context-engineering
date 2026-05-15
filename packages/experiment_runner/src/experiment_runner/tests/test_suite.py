@@ -57,19 +57,19 @@ def _config(tmp_path: Path) -> ExperimentSuiteConfig:
     )
 
 
-def test_suite_tasks_expand_cross_product_and_sort_by_model_corpus_question_system(tmp_path) -> None:
+def test_suite_tasks_expand_cross_product_and_sort_by_model_corpus_system_question(tmp_path) -> None:
     config = _config(tmp_path)
 
     tasks = suite.build_suite_tasks(config)
 
     assert [(t.model, t.level, t.question_id, t.system.value) for t in tasks] == [
         ("qwen3:4b", 1, "ss_L1_001", "ace"),
-        ("qwen3:4b", 1, "ss_L1_001", "clawcode"),
         ("qwen3:4b", 2, "ss_L2_002", "ace"),
+        ("qwen3:4b", 1, "ss_L1_001", "clawcode"),
         ("qwen3:4b", 2, "ss_L2_002", "clawcode"),
         ("qwen3:14b", 1, "ss_L1_001", "ace"),
-        ("qwen3:14b", 1, "ss_L1_001", "clawcode"),
         ("qwen3:14b", 2, "ss_L2_002", "ace"),
+        ("qwen3:14b", 1, "ss_L1_001", "clawcode"),
         ("qwen3:14b", 2, "ss_L2_002", "clawcode"),
     ]
     assert tasks[0].command == [
@@ -140,6 +140,23 @@ def test_reconcile_suite_state_preserves_completed_task_status(tmp_path) -> None
     assert reconciled.tasks[0].status == SuiteTaskStatus.SUCCEEDED
     assert reconciled.tasks[0].result_path == str(tmp_path / "result.jsonl")
     assert [task.index for task in reconciled.tasks] == list(range(1, 9))
+
+
+def test_reconcile_suite_state_preserves_existing_task_order(tmp_path) -> None:
+    config = _config(tmp_path)
+    old_order = suite.build_suite_tasks(config)
+    old_order = sorted(old_order, key=lambda t: (t.model, t.corpus.value, t.level, t.question_id, t.system.value))
+    for index, task in enumerate(old_order, 1):
+        task.index = index
+    state = ExperimentSuiteState(suite_id=config.suite_id, suite_name=config.name, tasks=old_order)
+
+    reconciled = suite.reconcile_suite_state(config, state)
+
+    assert [task.task_id for task in reconciled.tasks] == [task.task_id for task in old_order]
+    assert [(task.index, task.task_id) for task in reconciled.tasks] == [
+        (index, task.task_id)
+        for index, task in enumerate(old_order, 1)
+    ]
 
 
 def test_suite_cancel_marks_state_for_cooperative_stop(tmp_path, capsys) -> None:

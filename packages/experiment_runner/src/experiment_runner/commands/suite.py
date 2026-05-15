@@ -130,7 +130,7 @@ def _selected_questions(selection, questions: list[Question]) -> list[Question]:
 
 def build_suite_tasks(config: ExperimentSuiteConfig) -> list[SuiteTask]:
     validate_suite_config(config)
-    raw_tasks: list[tuple[int, int, int, str, int, SuiteTask]] = []
+    raw_tasks: list[tuple[int, int, int, int, str, SuiteTask]] = []
 
     for corpus_index, selection in enumerate(config.corpora):
         questions = _selected_questions(selection, load_questions(selection.questions_file, None))
@@ -168,9 +168,9 @@ def build_suite_tasks(config: ExperimentSuiteConfig) -> list[SuiteTask]:
                     raw_tasks.append((
                         model_index,
                         corpus_index,
+                        system_index,
                         question.level,
                         question.id,
-                        system_index,
                         task,
                     ))
 
@@ -196,18 +196,27 @@ def build_suite_state(
 
 
 def reconcile_suite_state(config: ExperimentSuiteConfig, state: ExperimentSuiteState) -> ExperimentSuiteState:
-    existing = {task.task_id: task for task in state.tasks}
+    planned_by_id = {task.task_id: task for task in build_suite_tasks(config)}
     tasks: list[SuiteTask] = []
-    for planned in build_suite_tasks(config):
-        previous = existing.get(planned.task_id)
-        if previous is not None:
-            planned.status = previous.status
-            planned.result_path = previous.result_path
-            planned.error = previous.error
-            planned.started_at = previous.started_at
-            planned.finished_at = previous.finished_at
-            planned.return_code = previous.return_code
+    for previous in state.tasks:
+        planned = planned_by_id.pop(previous.task_id, None)
+        if planned is None:
+            continue
+        # Keep persisted suite order stable on resume. Newly-created suites use
+        # the current planner order; existing state files keep their saved order.
+        planned.index = previous.index
+        planned.status = previous.status
+        planned.result_path = previous.result_path
+        planned.error = previous.error
+        planned.started_at = previous.started_at
+        planned.finished_at = previous.finished_at
+        planned.return_code = previous.return_code
         tasks.append(planned)
+    for planned in planned_by_id.values():
+        planned.index = len(tasks) + 1
+        tasks.append(planned)
+    for index, task in enumerate(tasks, 1):
+        task.index = index
     state.tasks = tasks
     return state
 
