@@ -128,6 +128,17 @@ class ClaudeCodeLocalRunner(BaseRunner):
             result.answer_error = "Failed to parse JSON output from claude"
             result.metrics = RunMetrics(execution_time_s=execution_time)
             return result
+        if data.get("is_error") is True or data.get("api_error_status") is not None:
+            detail = data.get("result") or data.get("message") or data.get("api_error_status")
+            result.answer_error = f"claude returned error: {detail}"
+            if self.config.store_trace:
+                result.trace = SessionTrace(
+                    model=data.get("model") if isinstance(data.get("model"), str) else None,
+                    workspace_root=str(workspace) if "workspace" in locals() else None,
+                    extra=data,
+                )
+            result.metrics = RunMetrics(execution_time_s=execution_time)
+            return result
 
         # Claude Code JSON output: answer is in "result", not "message".
         answer_text = data.get("result") or data.get("message")

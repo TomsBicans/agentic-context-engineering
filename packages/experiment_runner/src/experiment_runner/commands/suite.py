@@ -7,6 +7,7 @@ import selectors
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,7 +37,7 @@ def load_suite_config(path: str | Path) -> ExperimentSuiteConfig:
 def save_suite_config(path: str | Path, config: ExperimentSuiteConfig) -> None:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(config.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    _atomic_write_text(out, config.model_dump_json(indent=2) + "\n")
 
 
 def load_suite_state(path: str | Path) -> ExperimentSuiteState:
@@ -47,7 +48,32 @@ def save_suite_state(path: str | Path, state: ExperimentSuiteState) -> None:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     state.updated_at = datetime.now(timezone.utc)
-    out.write_text(state.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    _atomic_write_text(out, state.model_dump_json(indent=2) + "\n")
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    tmp_name: str | None = None
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as tmp:
+        tmp_name = tmp.name
+        tmp.write(text)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+    try:
+        os.replace(tmp_name, path)
+    except Exception:
+        if tmp_name:
+            try:
+                Path(tmp_name).unlink()
+            except OSError:
+                pass
+        raise
 
 
 def validate_suite_config(config: ExperimentSuiteConfig) -> None:
@@ -214,6 +240,7 @@ def reconcile_suite_state(config: ExperimentSuiteConfig, state: ExperimentSuiteS
         planned.result_path = previous.result_path
         planned.error = previous.error
         planned.started_at = previous.started_at
+        planned.last_heartbeat_at = previous.last_heartbeat_at
         planned.finished_at = previous.finished_at
         planned.return_code = previous.return_code
         tasks.append(planned)
@@ -250,7 +277,23 @@ def _result_path_from_output(lines: Iterable[str]) -> str | None:
 
 
 def _task_result_exists(task: SuiteTask) -> bool:
-    return bool(task.result_path and Path(task.result_path).is_file())
+    return bool(
+        task.result_path
+        and Path(task.result_path).is_file()
+        and Path(task.result_path).stat().st_size > 0
+    )
+
+
+def _is_pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def _terminate_process_tree(process: subprocess.Popen, *, grace_s: float = 5.0) -> None:
@@ -279,10 +322,21 @@ def run_suite(
     path = Path(state_path)
     if path.exists():
         state = reconcile_suite_state(config, load_suite_state(path))
+        if state.runner_pid is not None and _is_pid_alive(state.runner_pid):
+            raise RuntimeError(
+                f"Suite runner is already active (pid={state.runner_pid}). "
+                "Stop the existing process before starting a new run."
+            )
+        # Reset tasks orphaned in RUNNING state by a crashed/killed runner.
+        for task in state.tasks:
+            if task.status == SuiteTaskStatus.RUNNING:
+                task.status = SuiteTaskStatus.PENDING
     else:
         log_path = str(path.with_suffix(".log"))
         state = build_suite_state(config, config_path=config_path, log_path=log_path)
     state.cancel_requested = False
+    state.runner_pid = os.getpid()
+    state.active_pid = None
     save_suite_state(path, state)
 
     log_path = Path(state.log_path or path.with_suffix(".log"))
@@ -301,6 +355,7 @@ def run_suite(
 
             task.status = SuiteTaskStatus.RUNNING
             task.started_at = datetime.now(timezone.utc)
+            task.last_heartbeat_at = task.started_at
             task.finished_at = None
             task.error = None
             task.return_code = None
@@ -315,8 +370,7 @@ def run_suite(
                 task.command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
+                bufsize=0,
                 env=env,
                 start_new_session=True,
             )
@@ -327,6 +381,32 @@ def run_suite(
 
             lines: list[str] = []
             assert process.stdout is not None
+            stdout_fd = process.stdout.fileno()
+            os.set_blocking(stdout_fd, False)
+            pending_output = b""
+
+            def drain_stdout() -> bool:
+                nonlocal pending_output
+                saw_eof = False
+                while True:
+                    try:
+                        chunk = os.read(stdout_fd, 8192)
+                    except BlockingIOError:
+                        break
+                    if not chunk:
+                        saw_eof = True
+                        break
+                    pending_output += chunk
+                    while b"\n" in pending_output:
+                        raw_line, pending_output = pending_output.split(b"\n", 1)
+                        line = raw_line.decode("utf-8", errors="replace").rstrip("\r")
+                        if not line:
+                            continue
+                        lines.append(line)
+                        log.write(line + "\n")
+                        log.flush()
+                return saw_eof
+
             timed_out = False
             started_monotonic = time.monotonic()
             deadline = started_monotonic + max(config.task_timeout_s, 1)
@@ -334,14 +414,8 @@ def run_suite(
             selector = selectors.DefaultSelector()
             selector.register(process.stdout, selectors.EVENT_READ)
             while process.poll() is None:
-                for key, _ in selector.select(timeout=0.5):
-                    line = key.fileobj.readline()
-                    if not line:
-                        continue
-                    line = line.rstrip("\n")
-                    lines.append(line)
-                    log.write(line + "\n")
-                    log.flush()
+                for _, _ in selector.select(timeout=0.5):
+                    drain_stdout()
 
                 current = load_suite_state(path)
                 if current.cancel_requested:
@@ -362,23 +436,30 @@ def run_suite(
                         f"timeout_in={remaining}s\n"
                     )
                     log.flush()
+                    heartbeat_state = load_suite_state(path)
+                    heartbeat_task = heartbeat_state.tasks[task.index - 1]
+                    if heartbeat_task.task_id == task.task_id:
+                        heartbeat_task.last_heartbeat_at = datetime.now(timezone.utc)
+                        heartbeat_state.active_pid = process.pid
+                        save_suite_state(path, heartbeat_state)
                     next_heartbeat = now + TASK_HEARTBEAT_INTERVAL_S
 
-            for line in process.stdout:
-                line = line.rstrip("\n")
-                if not line:
-                    continue
-                lines.append(line)
-                log.write(line + "\n")
-                log.flush()
             selector.close()
-
             rc = process.wait()
+            drain_stdout()
+            if pending_output:
+                line = pending_output.decode("utf-8", errors="replace").rstrip("\r")
+                if line:
+                    lines.append(line)
+                    log.write(line + "\n")
+                    log.flush()
+                pending_output = b""
             state = load_suite_state(path)
             task = state.tasks[task.index - 1]
             task.return_code = rc
             task.finished_at = datetime.now(timezone.utc)
-            task.result_path = _result_path_from_output(lines) or task.result_path
+            reported_result_path = _result_path_from_output(lines)
+            task.result_path = reported_result_path or task.result_path
             state.active_pid = None
             elapsed = int(time.monotonic() - started_monotonic)
             log.write(f"finished pid={process.pid} rc={rc} elapsed={elapsed}s\n")
@@ -391,13 +472,18 @@ def run_suite(
                 task.status = SuiteTaskStatus.FAILED
                 task.error = f"Task timed out after {config.task_timeout_s}s"
             elif rc == 0:
-                task.status = SuiteTaskStatus.SUCCEEDED
+                if reported_result_path and _task_result_exists(task):
+                    task.status = SuiteTaskStatus.SUCCEEDED
+                else:
+                    task.status = SuiteTaskStatus.FAILED
+                    task.error = "Command exited successfully but did not report a non-empty result file."
             else:
                 task.status = SuiteTaskStatus.FAILED
                 task.error = "\n".join(lines[-20:]) or f"Command exited with {rc}"
             save_suite_state(path, state)
 
     state = load_suite_state(path)
+    state.runner_pid = None
     state.active_pid = None
     save_suite_state(path, state)
     return state

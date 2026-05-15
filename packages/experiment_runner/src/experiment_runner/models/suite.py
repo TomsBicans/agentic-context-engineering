@@ -57,6 +57,7 @@ class SuiteTask(BaseModel):
     result_path: Optional[str] = None
     error: Optional[str] = None
     started_at: Optional[datetime] = None
+    last_heartbeat_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     return_code: Optional[int] = None
 
@@ -68,6 +69,7 @@ class ExperimentSuiteState(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     cancel_requested: bool = False
+    runner_pid: Optional[int] = None
     active_pid: Optional[int] = None
     log_path: Optional[str] = None
     tasks: list[SuiteTask] = Field(default_factory=list)

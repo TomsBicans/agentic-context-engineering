@@ -1,4 +1,5 @@
 import time
+import sys
 from pathlib import Path
 
 from experiment_runner.models.metrics import RunMetrics, TokenCounts
@@ -55,6 +56,13 @@ class AceRunner(BaseRunner):
                     answer_parts.append(payload)
                 elif event_type == "tool_call":
                     tool_sequence.append(payload)
+                    sys.stderr.write(f"ace tool_call: {payload}\n")
+                    sys.stderr.flush()
+                elif event_type == "tool_result":
+                    name = payload.get("name", "tool") if isinstance(payload, dict) else "tool"
+                    snippet = payload.get("snippet", "") if isinstance(payload, dict) else str(payload)
+                    sys.stderr.write(f"ace tool_result: {name}: {snippet}\n")
+                    sys.stderr.flush()
                 elif event_type == "done":
                     pass
         except Exception as exc:

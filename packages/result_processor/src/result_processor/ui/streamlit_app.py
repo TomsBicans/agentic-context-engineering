@@ -497,6 +497,27 @@ def _is_process_alive(pid: int) -> bool:
     return True
 
 
+def _suite_runner_alive(state_path: Path) -> tuple[bool, int | None]:
+    """Return (is_alive, pid) for the suite runner at state_path.
+
+    Prefers runner_pid (the run_suite process itself, alive for the full run)
+    over active_pid (the current task subprocess, which is None between tasks).
+    """
+    if not state_path.exists():
+        return False, None
+    try:
+        state = load_suite_state(state_path)
+    except Exception:
+        return False, None
+    runner_pid = state.runner_pid
+    if runner_pid is not None and _is_process_alive(runner_pid):
+        return True, runner_pid
+    active_pid = state.active_pid
+    if active_pid is not None and _is_process_alive(active_pid):
+        return True, active_pid
+    return False, None
+
+
 def _child_pids(pid: int) -> list[int]:
     children_path = Path("/proc") / str(pid) / "task" / str(pid) / "children"
     try:
@@ -1728,14 +1749,30 @@ def _suite_state_dataframe(state_path: Path) -> tuple[dict, pd.DataFrame]:
             "system": task.system.value,
             "result_path": task.result_path,
             "run_id": _run_id_from_result_path(task.result_path),
+            "started_at": task.started_at,
+            "last_heartbeat_at": task.last_heartbeat_at,
+            "finished_at": task.finished_at,
             "return_code": task.return_code,
             "error": task.error,
         }
         for task in state.tasks
     ]
+    summary["updated_at"] = state.updated_at
+    summary["active_pid"] = state.active_pid
     return summary, pd.DataFrame(rows)
 
 
+def _elapsed_seconds_since(value) -> int | None:
+    if value is None or pd.isna(value):
+        return None
+    if not isinstance(value, datetime):
+        value = pd.to_datetime(value).to_pydatetime()
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return max(int((datetime.now(timezone.utc) - value).total_seconds()), 0)
+
+
+@st.fragment(run_every=10)
 def _render_suite_progress(state_path: Path, df: pd.DataFrame, analyses, runs) -> None:
     summary, tasks_df = _suite_state_dataframe(state_path)
     if not summary:
@@ -1759,6 +1796,23 @@ def _render_suite_progress(state_path: Path, df: pd.DataFrame, analyses, runs) -
         st.warning("Cancellation has been requested. The suite stops before starting the next task.")
 
     if not tasks_df.empty:
+        running_rows = tasks_df[tasks_df["status"] == SuiteTaskStatus.RUNNING.value]
+        if not running_rows.empty:
+            running = running_rows.iloc[0]
+            elapsed_s = _elapsed_seconds_since(running.get("started_at"))
+            heartbeat_age_s = _elapsed_seconds_since(running.get("last_heartbeat_at"))
+            heartbeat_text = (
+                f", last heartbeat {heartbeat_age_s}s ago"
+                if heartbeat_age_s is not None
+                else ""
+            )
+            st.info(
+                "Running "
+                f"{int(running['index'])}/{total}: `{running['system']}` "
+                f"`{running['model']}` `{running['question_id']}` "
+                f"(pid={summary.get('active_pid')}, elapsed={elapsed_s or 0}s{heartbeat_text})"
+            )
+
         event = st.dataframe(
             tasks_df,
             width="stretch",
@@ -1852,6 +1906,7 @@ def _suite_widget_state_from_config(
         "suite_corpora": [selection.corpus.value for selection in config.corpora if
                           selection.corpus.value in CORPUS_DEFAULTS],
         "suite_num_ctx": config.num_ctx,
+        "suite_task_timeout_s": config.task_timeout_s,
         "suite_reasoning_enabled": config.reasoning_enabled,
         "suite_no_trace": config.no_trace,
         "suite_output_dir": config.output_dir,
@@ -1942,6 +1997,7 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
     st.session_state.setdefault("suite_models", [DEFAULT_MODEL if DEFAULT_MODEL in model_options else model_options[0]])
     st.session_state.setdefault("suite_corpora", ["solar_system_wiki"])
     st.session_state.setdefault("suite_num_ctx", 8192)
+    st.session_state.setdefault("suite_task_timeout_s", 240)
     st.session_state.setdefault("suite_reasoning_enabled", False)
     st.session_state.setdefault("suite_no_trace", True)
     st.session_state.setdefault("suite_output_dir", str(cfg["experiment_dir"]))
@@ -2023,7 +2079,7 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
             st.rerun()
         cols[1].caption(f"Suggested: `{suggested_name}`")
 
-    cols = st.columns(3)
+    cols = st.columns(4)
     num_ctx = cols[0].number_input(
         "suite num_ctx",
         min_value=1024,
@@ -2031,11 +2087,18 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
         step=1024,
         key="suite_num_ctx",
     )
-    reasoning_enabled = cols[1].checkbox(
+    task_timeout_s = cols[1].number_input(
+        "suite task_timeout_s",
+        min_value=10,
+        max_value=3600,
+        step=10,
+        key="suite_task_timeout_s",
+    )
+    reasoning_enabled = cols[2].checkbox(
         "suite reasoning_enabled",
         key="suite_reasoning_enabled",
     )
-    no_trace = cols[2].checkbox(
+    no_trace = cols[3].checkbox(
         "suite no_trace",
         key="suite_no_trace",
     )
@@ -2052,6 +2115,7 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
         corpora=corpus_selections,
         output_dir=output_dir,
         num_ctx=int(num_ctx),
+        task_timeout_s=int(task_timeout_s),
         reasoning_enabled=reasoning_enabled,
         no_trace=no_trace,
     )
@@ -2075,11 +2139,19 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
 
     st.markdown("### Suite control")
     st.code(_shell_command(run_args), language="bash")
+    suite_alive, suite_pid = _suite_runner_alive(state_path)
+    if suite_alive:
+        st.info(f"Suite runner is active (pid={suite_pid}). Stop it before starting a new run.")
     cols = st.columns(4)
     if cols[0].button("Save config", width="stretch", disabled=preview.empty):
         save_suite_config(config_path, config)
         st.success(f"Saved {config_path}")
-    if cols[1].button("Run / resume suite", type="primary", width="stretch", disabled=preview.empty):
+    if cols[1].button(
+        "Run / resume suite",
+        type="primary",
+        width="stretch",
+        disabled=preview.empty or suite_alive,
+    ):
         save_suite_config(config_path, config)
         pid = _start_background_subprocess(run_args, launcher_log_path)
         st.success(f"Started suite process pid={pid}.")
@@ -2091,6 +2163,7 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
         else:
             st.error(result.stderr or result.stdout or f"Cancel failed with {result.returncode}")
     if cols[3].button("Refresh suite status", width="stretch"):
+        st.cache_data.clear()
         st.rerun()
 
     st.caption(f"Config: `{config_path}`")

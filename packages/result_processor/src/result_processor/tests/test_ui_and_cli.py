@@ -333,6 +333,7 @@ def test_suite_widget_state_from_config_includes_per_corpus_selection_fields() -
     assert state["suite_levels_solar_system_wiki"] == [2]
     assert state["suite_ids_solar_system_wiki"] == ["ss_L2_005"]
     assert state["suite_num_ctx"] == 16384
+    assert state["suite_task_timeout_s"] == 240
     assert state["suite_reasoning_enabled"] is True
     assert state["suite_no_trace"] is True
 
