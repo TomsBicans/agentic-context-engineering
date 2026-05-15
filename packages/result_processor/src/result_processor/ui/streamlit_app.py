@@ -1773,16 +1773,22 @@ def _elapsed_seconds_since(value) -> int | None:
 
 
 @st.fragment(run_every=10)
-def _render_suite_progress(state_path: Path, df: pd.DataFrame, analyses, runs) -> None:
-    summary, tasks_df = _suite_state_dataframe(state_path)
+def _render_suite_live_status(state_path: Path) -> None:
+    """Progress bar, metrics, and running-task info. Auto-refreshes every 10 s.
+
+    Kept intentionally minimal — no interactive widgets — so the fragment
+    timer never conflicts with on_select reruns from the task table.
+    """
+    try:
+        summary, tasks_df = _suite_state_dataframe(state_path)
+    except Exception:
+        return
     if not summary:
-        st.info("No persisted suite state yet.")
         return
 
     total = int(summary["total"])
     completed = int(summary["completed"])
-    progress = completed / total if total else 0.0
-    st.progress(progress, text=f"{completed}/{total} task(s) completed")
+    st.progress(completed / total if total else 0.0, text=f"{completed}/{total} task(s) completed")
 
     cols = st.columns(6)
     cols[0].metric("Total", total)
@@ -1793,7 +1799,16 @@ def _render_suite_progress(state_path: Path, df: pd.DataFrame, analyses, runs) -
     cols[5].metric("Cancelled", summary[SuiteTaskStatus.CANCELLED.value])
 
     if summary["cancel_requested"]:
-        st.warning("Cancellation has been requested. The suite stops before starting the next task.")
+        still_running = int(summary.get(SuiteTaskStatus.RUNNING.value, 0)) > 0
+        if still_running:
+            st.warning("Cancellation requested — suite will stop after the current task finishes.")
+        else:
+            pending = int(summary.get(SuiteTaskStatus.PENDING.value, 0))
+            msg = (
+                f"Suite was cancelled. {int(summary['completed'])}/{total} tasks completed."
+                + (f" {pending} task(s) still pending — click **Run / resume suite** to continue." if pending else "")
+            )
+            st.info(msg)
 
     if not tasks_df.empty:
         running_rows = tasks_df[tasks_df["status"] == SuiteTaskStatus.RUNNING.value]
@@ -1813,35 +1828,47 @@ def _render_suite_progress(state_path: Path, df: pd.DataFrame, analyses, runs) -
                 f"(pid={summary.get('active_pid')}, elapsed={elapsed_s or 0}s{heartbeat_text})"
             )
 
-        event = st.dataframe(
-            tasks_df,
-            width="stretch",
-            hide_index=True,
-            on_select="rerun",
-            selection_mode="single-row",
-            key="suite_tasks_table",
-        )
-        selected_rows = event.selection.rows if event.selection else []
-        if selected_rows:
-            selected = tasks_df.iloc[selected_rows[0]]
-            run_id = selected.get("run_id")
-            if run_id and not df.empty and run_id in set(df["run_id"]):
-                st.divider()
-                _render_run_details(df, analyses, runs, run_id)
-            elif _is_valid_path_value(selected.get("result_path")):
-                run = _run_from_result_path(selected.get("result_path"))
-                if run is None:
-                    st.warning("The selected task result file could not be read.")
-                else:
-                    st.divider()
-                    _render_run_details(
-                        _dataframe_for_single_run(run),
-                        analyses,
-                        [run],
-                        run.run_id,
-                    )
+
+def _render_suite_progress(state_path: Path, df: pd.DataFrame, analyses, runs) -> None:
+    _render_suite_live_status(state_path)
+
+    summary, tasks_df = _suite_state_dataframe(state_path)
+    if not summary:
+        st.info("No persisted suite state yet.")
+        return
+
+    if tasks_df.empty:
+        return
+
+    event = st.dataframe(
+        tasks_df,
+        width="stretch",
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="suite_tasks_table",
+    )
+    selected_rows = event.selection.rows if event.selection else []
+    if selected_rows:
+        selected = tasks_df.iloc[selected_rows[0]]
+        run_id = selected.get("run_id")
+        if run_id and not df.empty and run_id in set(df["run_id"]):
+            st.divider()
+            _render_run_details(df, analyses, runs, run_id)
+        elif _is_valid_path_value(selected.get("result_path")):
+            run = _run_from_result_path(selected.get("result_path"))
+            if run is None:
+                st.warning("The selected task result file could not be read.")
             else:
-                st.info("The selected task has not produced a result file yet.")
+                st.divider()
+                _render_run_details(
+                    _dataframe_for_single_run(run),
+                    analyses,
+                    [run],
+                    run.run_id,
+                )
+        else:
+            st.info("The selected task has not produced a result file yet.")
 
 
 def _suite_task_preview(config: ExperimentSuiteConfig) -> pd.DataFrame:
