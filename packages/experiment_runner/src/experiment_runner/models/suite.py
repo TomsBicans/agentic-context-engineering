@@ -36,6 +36,7 @@ class ExperimentSuiteConfig(BaseModel):
     corpora: list[SuiteCorpusSelection]
     output_dir: str = "./data/experiment_results"
     num_ctx: int = 8192
+    task_timeout_s: int = 240
     reasoning_enabled: bool = False
     no_trace: bool = False
 

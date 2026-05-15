@@ -9,11 +9,19 @@ import pandas as pd
 import pytest
 
 from experiment_runner.models.enums import Corpus, SystemName
-from experiment_runner.models.suite import ExperimentSuiteConfig, ExperimentSuiteState, SuiteCorpusSelection, SuiteTask
+from experiment_runner.models.suite import (
+    ExperimentSuiteConfig,
+    ExperimentSuiteState,
+    SuiteCorpusSelection,
+    SuiteTask,
+    SuiteTaskStatus,
+)
 from result_processor import main as result_main
 from result_processor.commands.analyze import run_analyze
+from result_processor.commands.analysis_job import load_analysis_job_state
 from result_processor.commands.dashboard import run_dashboard
 from result_processor.commands.visualize import run_visualize
+from result_processor.models.analysis_job import AnalysisJobState, AnalysisJobTask, AnalysisTaskStatus
 from result_processor.tests.conftest import analysis_result, run_payload, write_jsonl
 from result_processor.ui import streamlit_app as ui
 
@@ -405,6 +413,70 @@ def test_result_files_from_suite_states_returns_existing_result_paths(tmp_path) 
     state_path.write_text(state.model_dump_json(), encoding="utf-8")
 
     assert ui._result_files_from_suite_states([state_path]) == [str(existing.resolve())]
+
+
+def test_kill_tracked_background_processes_cancels_state_and_processes(tmp_path, monkeypatch) -> None:
+    suite_dir = tmp_path / "suites"
+    analysis_dir = tmp_path / "analysis"
+    suite_dir.mkdir()
+    analysis_dir.mkdir()
+    suite_state = ExperimentSuiteState(
+        suite_id="suite-1",
+        suite_name="suite",
+        active_pid=12345,
+        tasks=[
+            SuiteTask(
+                task_id="t1",
+                index=1,
+                system=SystemName.ACE,
+                model="qwen3:4b",
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="questions.json",
+                path_to_corpora="corpora",
+                question_id="ss_L1_001",
+                question_text="Question?",
+                level=1,
+                command=["python"],
+                status=SuiteTaskStatus.RUNNING,
+            )
+        ],
+    )
+    suite_state_path = suite_dir / "suite.state.json"
+    suite_state_path.write_text(suite_state.model_dump_json(), encoding="utf-8")
+    analysis_state = AnalysisJobState(
+        job_name="analysis",
+        experiment_results_dir="results",
+        output_dir=str(tmp_path / "analysis-output"),
+        path_to_corpora="corpora",
+        examiner_model="qwen3:4b",
+        active_pid=12346,
+        tasks=[
+            AnalysisJobTask(
+                run_id="run-1",
+                source_file="run.jsonl",
+                output_file="analysis.jsonl",
+                status=AnalysisTaskStatus.RUNNING,
+            )
+        ],
+    )
+    analysis_state_path = analysis_dir / "analysis.state.json"
+    analysis_state_path.write_text(analysis_state.model_dump_json(), encoding="utf-8")
+    killed: list[int] = []
+    monkeypatch.setattr(ui, "_terminate_pid_tree", lambda pid: killed.append(pid) or True)
+
+    messages = ui._kill_tracked_background_processes(suite_dir, analysis_dir)
+
+    assert killed == [12345, 12346]
+    assert any("Killed suite process tree pid=12345" in message for message in messages)
+    assert any("Killed analysis process tree pid=12346" in message for message in messages)
+    updated_suite = ui.load_suite_state(suite_state_path)
+    assert updated_suite.cancel_requested is True
+    assert updated_suite.active_pid is None
+    assert updated_suite.tasks[0].status == SuiteTaskStatus.CANCELLED
+    updated_analysis = load_analysis_job_state(analysis_state_path)
+    assert updated_analysis.cancel_requested is True
+    assert updated_analysis.active_pid is None
+    assert updated_analysis.tasks[0].status == AnalysisTaskStatus.CANCELLED
 
 
 def test_analysis_run_records_link_legacy_directory_by_suite_result_names(tmp_path) -> None:

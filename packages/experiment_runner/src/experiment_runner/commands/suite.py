@@ -3,8 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import selectors
+import signal
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
@@ -21,6 +24,8 @@ from experiment_runner.models.suite import (
 )
 from experiment_runner.runners.registry import DISABLED_SYSTEMS, SYSTEM_AUTOMATION_LEVELS
 
+
+TASK_HEARTBEAT_INTERVAL_S = 30.0
 
 
 
@@ -248,6 +253,23 @@ def _task_result_exists(task: SuiteTask) -> bool:
     return bool(task.result_path and Path(task.result_path).is_file())
 
 
+def _terminate_process_tree(process: subprocess.Popen, *, grace_s: float = 5.0) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except OSError:
+        process.terminate()
+    try:
+        process.wait(timeout=grace_s)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            process.kill()
+        process.wait()
+
+
 def run_suite(
     config: ExperimentSuiteConfig,
     state_path: str | Path,
@@ -296,21 +318,60 @@ def run_suite(
                 text=True,
                 bufsize=1,
                 env=env,
+                start_new_session=True,
             )
             state.active_pid = process.pid
             save_suite_state(path, state)
+            log.write(f"started pid={process.pid} timeout={config.task_timeout_s}s\n")
+            log.flush()
 
             lines: list[str] = []
             assert process.stdout is not None
+            timed_out = False
+            started_monotonic = time.monotonic()
+            deadline = started_monotonic + max(config.task_timeout_s, 1)
+            next_heartbeat = started_monotonic + TASK_HEARTBEAT_INTERVAL_S
+            selector = selectors.DefaultSelector()
+            selector.register(process.stdout, selectors.EVENT_READ)
+            while process.poll() is None:
+                for key, _ in selector.select(timeout=0.5):
+                    line = key.fileobj.readline()
+                    if not line:
+                        continue
+                    line = line.rstrip("\n")
+                    lines.append(line)
+                    log.write(line + "\n")
+                    log.flush()
+
+                current = load_suite_state(path)
+                if current.cancel_requested:
+                    _terminate_process_tree(process)
+                    break
+                now = time.monotonic()
+                if now >= deadline:
+                    timed_out = True
+                    log.write(f"task timed out after {config.task_timeout_s}s\n")
+                    log.flush()
+                    _terminate_process_tree(process)
+                    break
+                if now >= next_heartbeat:
+                    elapsed = int(now - started_monotonic)
+                    remaining = max(int(deadline - now), 0)
+                    log.write(
+                        f"task still running pid={process.pid} elapsed={elapsed}s "
+                        f"timeout_in={remaining}s\n"
+                    )
+                    log.flush()
+                    next_heartbeat = now + TASK_HEARTBEAT_INTERVAL_S
+
             for line in process.stdout:
                 line = line.rstrip("\n")
+                if not line:
+                    continue
                 lines.append(line)
                 log.write(line + "\n")
                 log.flush()
-
-                current = load_suite_state(path)
-                if current.cancel_requested and process.poll() is None:
-                    process.terminate()
+            selector.close()
 
             rc = process.wait()
             state = load_suite_state(path)
@@ -319,10 +380,16 @@ def run_suite(
             task.finished_at = datetime.now(timezone.utc)
             task.result_path = _result_path_from_output(lines) or task.result_path
             state.active_pid = None
+            elapsed = int(time.monotonic() - started_monotonic)
+            log.write(f"finished pid={process.pid} rc={rc} elapsed={elapsed}s\n")
+            log.flush()
 
             if state.cancel_requested:
                 task.status = SuiteTaskStatus.CANCELLED
                 task.error = "Suite cancellation requested."
+            elif timed_out:
+                task.status = SuiteTaskStatus.FAILED
+                task.error = f"Task timed out after {config.task_timeout_s}s"
             elif rc == 0:
                 task.status = SuiteTaskStatus.SUCCEEDED
             else:

@@ -10,12 +10,15 @@ import io
 import json
 import os
 import re
+import signal
 import shlex
 import subprocess
 import sys
+import time
 import uuid
 import zipfile
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -27,6 +30,7 @@ from experiment_runner.commands.suite import (
     load_suite_config,
     load_suite_state,
     save_suite_config,
+    save_suite_state,
     summarize_suite_state,
 )
 from experiment_runner.models.enums import AutomationLevel, Corpus, SystemName
@@ -481,6 +485,162 @@ def _start_background_subprocess(args: list[str], log_path: Path) -> int:
     return process.pid
 
 
+def _is_process_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _child_pids(pid: int) -> list[int]:
+    children_path = Path("/proc") / str(pid) / "task" / str(pid) / "children"
+    try:
+        raw = children_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return []
+    return [int(value) for value in raw.split() if value.isdigit()]
+
+
+def _process_tree_pids(pid: int) -> list[int]:
+    seen: set[int] = set()
+
+    def visit(current: int) -> None:
+        if current in seen:
+            return
+        seen.add(current)
+        for child in _child_pids(current):
+            visit(child)
+
+    visit(pid)
+    return sorted(seen, reverse=True)
+
+
+def _terminate_pid_tree(pid: int, *, grace_s: float = 5.0) -> bool:
+    if pid == os.getpid() or not _is_process_alive(pid):
+        return False
+
+    pids = _process_tree_pids(pid)
+    if not pids:
+        pids = [pid]
+
+    # Dashboard-launched suite/task processes are session leaders. Killing the
+    # process group catches children that may not appear in /proc by the time
+    # we scan, while the pgid check prevents killing the Streamlit process group.
+    try:
+        if os.getpgid(pid) == pid:
+            os.killpg(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        pass
+
+    for target in pids:
+        if target == os.getpid():
+            continue
+        try:
+            os.kill(target, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            continue
+
+    deadline = time.monotonic() + grace_s
+    while time.monotonic() < deadline:
+        if not any(_is_process_alive(target) for target in pids):
+            return True
+        time.sleep(0.1)
+
+    try:
+        if os.getpgid(pid) == pid:
+            os.killpg(pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    for target in pids:
+        if target == os.getpid():
+            continue
+        try:
+            os.kill(target, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            continue
+    return True
+
+
+def _analysis_state_paths(analysis_dir: Path) -> list[Path]:
+    if not analysis_dir.exists():
+        return []
+    return sorted(analysis_dir.glob("*.state.json"))
+
+
+def _cancel_tracked_suite_state(state_path: Path) -> int | None:
+    state = load_suite_state(state_path)
+    pid = state.active_pid
+    now = datetime.now(timezone.utc)
+    state.cancel_requested = True
+    state.active_pid = None
+    for task in state.tasks:
+        if task.status == SuiteTaskStatus.RUNNING:
+            task.status = SuiteTaskStatus.CANCELLED
+            task.error = "Killed from dashboard."
+            task.finished_at = now
+    save_suite_state(state_path, state)
+    return pid
+
+
+def _cancel_tracked_analysis_state(state_path: Path) -> int | None:
+    state = load_analysis_job_state(state_path)
+    pid = state.active_pid
+    now = datetime.now(timezone.utc)
+    state.cancel_requested = True
+    state.active_pid = None
+    for task in state.tasks:
+        if task.status == AnalysisTaskStatus.RUNNING:
+            task.status = AnalysisTaskStatus.CANCELLED
+            task.error = "Killed from dashboard."
+            task.finished_at = now
+    save_analysis_job_state(state_path, state)
+    return pid
+
+
+def _kill_tracked_background_processes(suite_dir: Path, analysis_dir: Path) -> list[str]:
+    messages: list[str] = []
+    targets: list[tuple[str, Path, int]] = []
+
+    for state_path in _suite_state_paths(suite_dir):
+        try:
+            pid = _cancel_tracked_suite_state(state_path)
+        except Exception as exc:
+            messages.append(f"{state_path.name}: could not update suite state: {exc}")
+            continue
+        if pid:
+            targets.append(("suite", state_path, pid))
+
+    for state_path in _analysis_state_paths(analysis_dir):
+        try:
+            pid = _cancel_tracked_analysis_state(state_path)
+        except Exception as exc:
+            messages.append(f"{state_path.name}: could not update analysis state: {exc}")
+            continue
+        if pid:
+            targets.append(("analysis", state_path, pid))
+
+    seen_pids: set[int] = set()
+    for kind, state_path, pid in targets:
+        if pid in seen_pids:
+            continue
+        seen_pids.add(pid)
+        if _terminate_pid_tree(pid):
+            messages.append(f"Killed {kind} process tree pid={pid} from {state_path.name}.")
+        else:
+            messages.append(f"No live {kind} process found for pid={pid} from {state_path.name}.")
+
+    if not targets and not messages:
+        messages.append("No tracked suite or analysis subprocesses found.")
+    return messages
+
+
 def _sidebar() -> dict:
     st.sidebar.header("Configuration")
     experiment_dir = st.sidebar.text_input(
@@ -515,6 +675,11 @@ def _sidebar() -> dict:
     if st.sidebar.button("🔄 Refresh data", width="stretch"):
         st.cache_data.clear()
         st.rerun()
+
+    if st.sidebar.button("🛑 Kill tracked subprocesses", width="stretch"):
+        messages = _kill_tracked_background_processes(Path(suite_dir), Path(analysis_dir))
+        st.sidebar.warning("\n".join(messages))
+        st.cache_data.clear()
 
     return {
         "experiment_dir": Path(experiment_dir),
@@ -1931,6 +2096,11 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
     st.caption(f"Config: `{config_path}`")
     st.caption(f"State: `{state_path}`")
     _render_suite_progress(state_path, df, analyses, runs)
+
+    suite_log_path = state_path.with_suffix(".log")
+    if suite_log_path.exists():
+        with st.expander("Suite task output", expanded=False):
+            st.code(suite_log_path.read_text(encoding="utf-8")[-12000:], language="text")
 
     if launcher_log_path.exists():
         with st.expander("Suite launcher output", expanded=False):

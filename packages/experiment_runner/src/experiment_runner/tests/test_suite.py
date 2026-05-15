@@ -14,6 +14,7 @@ from experiment_runner.models.suite import (
     ExperimentSuiteConfig,
     ExperimentSuiteState,
     SuiteCorpusSelection,
+    SuiteTask,
     SuiteTaskStatus,
 )
 
@@ -180,6 +181,32 @@ def test_result_path_from_output_parses_prefix_from_last_matching_line() -> None
 
 def test_result_path_from_output_returns_none_when_prefix_absent() -> None:
     assert suite._result_path_from_output(["no match here"]) is None
+
+
+def test_run_suite_marks_timed_out_task_failed(tmp_path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    config.task_timeout_s = 1
+    task = SuiteTask(
+        task_id="slow-task",
+        index=1,
+        system=SystemName.ACE,
+        model="qwen3:4b",
+        corpus=Corpus.SOLAR_SYSTEM_WIKI,
+        questions_file=config.corpora[0].questions_file,
+        path_to_corpora=config.corpora[0].path_to_corpora,
+        question_id="ss_L1_001",
+        question_text="Slow?",
+        level=1,
+        command=[sys.executable, "-c", "import time; print('started', flush=True); time.sleep(10)"],
+    )
+    monkeypatch.setattr(suite, "build_suite_tasks", lambda _config: [task])
+
+    state = suite.run_suite(config, tmp_path / "suite.state.json")
+
+    assert state.tasks[0].status == SuiteTaskStatus.FAILED
+    assert state.tasks[0].error == "Task timed out after 1s"
+    assert state.active_pid is None
+    assert "task timed out after 1s" in (tmp_path / "suite.state.log").read_text(encoding="utf-8")
 
 
 def test_experiment_runner_parses_suite_subcommands() -> None:
