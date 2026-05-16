@@ -26,6 +26,7 @@ import streamlit as st
 
 from agent.prompts import EXAMINEE_SYSTEM_MESSAGE
 from experiment_runner.commands.suite import (
+    build_augmented_suite_state,
     build_suite_tasks,
     load_suite_config,
     load_suite_state,
@@ -49,6 +50,7 @@ from experiment_runner.runners.baseline.clawcode import build_claw_command, claw
 from experiment_runner.runners.baseline.gptcodexlocal import build_codex_command
 from result_processor.commands.analysis_job import (
     build_analysis_job_state,
+    copy_matching_analysis_outputs,
     load_analysis_job_state,
     save_analysis_job_state,
     summarize_analysis_job_state,
@@ -1073,6 +1075,34 @@ def _result_files_from_suite_states(state_paths: list[Path]) -> list[str]:
     return sorted(paths)
 
 
+def _carried_over_result_files_from_suite_state(state_path: Path) -> list[str]:
+    try:
+        state = load_suite_state(state_path)
+    except Exception:
+        return []
+    source_by_task_id: dict[str, str] = {}
+    for source_path_raw in state.augmented_from_state_paths:
+        source_path = Path(source_path_raw)
+        if not source_path.is_file():
+            continue
+        try:
+            source_state = load_suite_state(source_path)
+        except Exception:
+            continue
+        for task in source_state.tasks:
+            if task.result_path and Path(task.result_path).is_file():
+                source_by_task_id[task.task_id] = str(Path(task.result_path).resolve())
+
+    carried: set[str] = set()
+    for task in state.tasks:
+        if not task.result_path or task.task_id not in source_by_task_id:
+            continue
+        result_path = Path(task.result_path)
+        if result_path.is_file() and str(result_path.resolve()) == source_by_task_id[task.task_id]:
+            carried.add(str(result_path.resolve()))
+    return sorted(carried)
+
+
 def _suite_records(suite_dir: Path) -> list[dict]:
     records: list[dict] = []
     for state_path in _suite_state_paths(suite_dir):
@@ -1957,6 +1987,16 @@ def _copy_suite_config(config: ExperimentSuiteConfig) -> ExperimentSuiteConfig:
     )
 
 
+def _augment_suite_config(config: ExperimentSuiteConfig) -> ExperimentSuiteConfig:
+    return config.model_copy(
+        deep=True,
+        update={
+            "suite_id": str(uuid.uuid4()),
+            "name": suite_slug(f"{config.name}-augment"),
+        },
+    )
+
+
 def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
     st.subheader("Experiment suite")
     st.caption(
@@ -1977,17 +2017,34 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
             format_func=lambda p: p.name,
             index=0,
         )
-        cols = st.columns(2)
+        cols = st.columns(3)
         if selected_config_path and cols[0].button("Load selected suite", width="stretch"):
             st.session_state["loaded_suite_config_path"] = str(selected_config_path)
             st.session_state.pop("copied_suite_config_json", None)
+            st.session_state.pop("augmented_suite_source_state_path", None)
+            st.session_state.pop("augmented_suite_config_id", None)
             st.rerun()
         if selected_config_path and cols[1].button("Copy selected suite", width="stretch"):
             copied = _copy_suite_config(load_suite_config(selected_config_path))
             st.session_state["copied_suite_config_json"] = copied.model_dump_json()
             st.session_state.pop("loaded_suite_config_path", None)
             st.session_state.pop("suite_loaded_config_for", None)
+            st.session_state.pop("augmented_suite_source_state_path", None)
+            st.session_state.pop("augmented_suite_config_id", None)
             st.rerun()
+        if selected_config_path and cols[2].button("Augment selected suite", width="stretch"):
+            base_config = load_suite_config(selected_config_path)
+            base_state_path = default_state_path(selected_config_path, base_config)
+            if not base_state_path.is_file():
+                st.warning(f"No suite state found for `{selected_config_path.name}`.")
+            else:
+                copied = _augment_suite_config(base_config)
+                st.session_state["copied_suite_config_json"] = copied.model_dump_json()
+                st.session_state["augmented_suite_source_state_path"] = str(base_state_path.resolve())
+                st.session_state["augmented_suite_config_id"] = copied.suite_id
+                st.session_state.pop("loaded_suite_config_path", None)
+                st.session_state.pop("suite_loaded_config_for", None)
+                st.rerun()
 
     loaded_path = st.session_state.get("loaded_suite_config_path")
     if loaded_path and Path(loaded_path).is_file():
@@ -2002,7 +2059,12 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
     if copied_config_json:
         try:
             copied_config = ExperimentSuiteConfig.model_validate_json(copied_config_json)
-            st.info("Copied suite config. Save it to create a separate suite.")
+            if st.session_state.get("augmented_suite_config_id") == copied_config.suite_id:
+                st.info(
+                    "Augmented suite draft. Edit and save it, then build augmented state before running."
+                )
+            else:
+                st.info("Copied suite config. Save it to create a separate suite.")
         except Exception as exc:
             st.warning(f"Could not copy suite config: {exc}")
             st.session_state.pop("copied_suite_config_json", None)
@@ -2154,6 +2216,23 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
     config_path, state_path, launcher_log_path = _suite_paths(suite_dir, config)
     run_args = _build_suite_run_args(str(config_path), str(state_path))
     cancel_args = _build_suite_cancel_args(str(state_path))
+    augmentation_source_path = st.session_state.get("augmented_suite_source_state_path")
+    is_augmentation_draft = (
+        copied_config is not None
+        and st.session_state.get("augmented_suite_config_id") == copied_config.suite_id
+        and bool(augmentation_source_path)
+    )
+    augmentation_state_ready = True
+    if is_augmentation_draft:
+        augmentation_state_ready = False
+        if state_path.is_file():
+            try:
+                augmentation_state_ready = (
+                    str(Path(augmentation_source_path).resolve())
+                    in load_suite_state(state_path).augmented_from_state_paths
+                )
+            except Exception:
+                augmentation_state_ready = False
 
     st.markdown("### Generated task commands")
     try:
@@ -2169,27 +2248,47 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
     suite_alive, suite_pid = _suite_runner_alive(state_path)
     if suite_alive:
         st.info(f"Suite runner is active (pid={suite_pid}). Stop it before starting a new run.")
-    cols = st.columns(4)
+    if is_augmentation_draft and not augmentation_state_ready:
+        st.warning("Build the augmented suite state before running so completed base tasks are carried over.")
+    cols = st.columns(5)
     if cols[0].button("Save config", width="stretch", disabled=preview.empty):
         save_suite_config(config_path, config)
         st.success(f"Saved {config_path}")
     if cols[1].button(
+        "Build augmented suite state",
+        width="stretch",
+        disabled=preview.empty or not is_augmentation_draft,
+    ):
+        save_suite_config(config_path, config)
+        source_state_path = Path(str(augmentation_source_path))
+        source_state = load_suite_state(source_state_path)
+        augmented_state = build_augmented_suite_state(
+            config,
+            source_state,
+            config_path=str(config_path.resolve()),
+            log_path=str(state_path.with_suffix(".log")),
+            source_state_path=str(source_state_path.resolve()),
+        )
+        save_suite_state(state_path, augmented_state)
+        st.success(f"Built augmented suite state at {state_path}")
+        st.rerun()
+    if cols[2].button(
         "Run / resume suite",
         type="primary",
         width="stretch",
-        disabled=preview.empty or suite_alive,
+        disabled=preview.empty or suite_alive or (is_augmentation_draft and not augmentation_state_ready),
     ):
         save_suite_config(config_path, config)
         pid = _start_background_subprocess(run_args, launcher_log_path)
         st.success(f"Started suite process pid={pid}.")
         st.rerun()
-    if cols[2].button("Cancel suite", width="stretch", disabled=not state_path.exists()):
+    if cols[3].button("Cancel suite", width="stretch", disabled=not state_path.exists()):
         result = subprocess.run(cancel_args, capture_output=True, text=True, check=False)
         if result.returncode == 0:
             st.warning("Cancellation requested.")
         else:
             st.error(result.stderr or result.stdout or f"Cancel failed with {result.returncode}")
-    if cols[3].button("Refresh suite status", width="stretch"):
+    if cols[4].button("Refresh suite status", width="stretch"):
         st.cache_data.clear()
         st.rerun()
 
@@ -2411,26 +2510,93 @@ def _tab_actions(cfg: dict, filtered: pd.DataFrame, analyses, runs) -> None:
             )
             analysis_name = st.text_input("Analysis run name", value=default_analysis_name)
             suite_resume = st.checkbox("Resume suite analysis (skip cached)", value=True)
+            carried_over_result_files = _carried_over_result_files_from_suite_state(selected_state)
             st.caption(f"{len(result_files)} result file(s) found for selected suite state.")
             analysis_output_dir, analysis_state_path, analysis_log_path = _analysis_job_paths(
                 cfg["analysis_dir"],
                 analysis_name,
             )
             analysis_name_exists = analysis_output_dir.exists()
-            if analysis_name_exists:
+            existing_analysis_state = analysis_state_path.exists()
+            existing_analysis_matches = False
+            if existing_analysis_state:
+                try:
+                    existing_state = load_analysis_job_state(analysis_state_path)
+                    existing_analysis_matches = (
+                        existing_state.suite_state_path is not None
+                        and Path(existing_state.suite_state_path).resolve() == selected_state.resolve()
+                    )
+                except Exception:
+                    existing_analysis_matches = False
+            analysis_name_conflict = analysis_name_exists and not existing_analysis_matches
+            if analysis_name_conflict:
                 st.warning(
                     "This analysis run name already exists in the result archive. "
                     "Choose a unique name before running analysis to avoid mixing new results with archived data."
                 )
+            base_analysis_dirs = _analysis_result_dirs(cfg["analysis_dir"])
+            base_analysis_dir = st.selectbox(
+                "Base analysis to augment",
+                [None, *base_analysis_dirs],
+                format_func=lambda p: "none" if p is None else p.name,
+            )
+            base_analysis_state_path = (
+                cfg["analysis_dir"] / f"{base_analysis_dir.name}.state.json"
+                if base_analysis_dir is not None
+                else None
+            )
+            base_analysis_source_path = (
+                base_analysis_state_path
+                if base_analysis_state_path is not None and base_analysis_state_path.is_file()
+                else base_analysis_dir
+            )
             run_args = _build_analysis_job_run_args(str(analysis_state_path))
             cancel_args = _build_analysis_job_cancel_args(str(analysis_state_path))
             st.code(_shell_command(run_args), language="bash")
 
-            if st.button(
+            cols = st.columns(2)
+            if cols[0].button(
+                    "Augment selected analysis",
+                    width="stretch",
+                    disabled=(
+                        not result_files
+                        or not analysis_name.strip()
+                        or base_analysis_dir is None
+                        or analysis_name_conflict
+                    ),
+            ):
+                copied = copy_matching_analysis_outputs(
+                    source_output_dir=base_analysis_dir,
+                    target_output_dir=analysis_output_dir,
+                    input_files=carried_over_result_files,
+                )
+                state = build_analysis_job_state(
+                    job_name=analysis_name,
+                    experiment_results_dir=str(cfg["experiment_dir"]),
+                    output_dir=str(analysis_output_dir),
+                    path_to_corpora=cfg["corpora_root"],
+                    examiner_model=cfg["examiner_model"],
+                    num_ctx=cfg["num_ctx"],
+                    input_files=result_files,
+                    resume=True,
+                    log_path=str(analysis_log_path),
+                    suite_id=selected_suite_state.suite_id,
+                    suite_name=selected_suite_state.suite_name,
+                    suite_config_path=str(Path(selected_suite_config_path).resolve()),
+                    suite_state_path=str(selected_state.resolve()),
+                    augmented_from_state_path=str(Path(base_analysis_source_path).resolve()),
+                )
+                save_analysis_job_state(analysis_state_path, state)
+                st.success(f"Prepared augmented analysis and copied {len(copied)} file(s).")
+                st.rerun()
+
+            if cols[1].button(
                     "▶ Run / resume suite analysis",
                     type="primary",
                     width="stretch",
-                    disabled=not result_files or not analysis_name.strip() or analysis_name_exists,
+                    disabled=not result_files
+                    or not analysis_name.strip()
+                    or analysis_name_conflict,
             ):
                 state = build_analysis_job_state(
                     job_name=analysis_name,
@@ -2446,6 +2612,9 @@ def _tab_actions(cfg: dict, filtered: pd.DataFrame, analyses, runs) -> None:
                     suite_name=selected_suite_state.suite_name,
                     suite_config_path=str(Path(selected_suite_config_path).resolve()),
                     suite_state_path=str(selected_state.resolve()),
+                    augmented_from_state_path=(
+                        str(Path(base_analysis_source_path).resolve()) if base_analysis_source_path else None
+                    ),
                 )
                 save_analysis_job_state(analysis_state_path, state)
                 pid = _start_background_subprocess(run_args, analysis_log_path)

@@ -284,6 +284,46 @@ def _task_result_exists(task: SuiteTask) -> bool:
     )
 
 
+def build_augmented_suite_state(
+    config: ExperimentSuiteConfig,
+    source_state: ExperimentSuiteState,
+    *,
+    config_path: str | None = None,
+    log_path: str | None = None,
+    source_state_path: str | None = None,
+) -> ExperimentSuiteState:
+    source_by_id = {task.task_id: task for task in source_state.tasks}
+    tasks = build_suite_tasks(config)
+    for task in tasks:
+        previous = source_by_id.get(task.task_id)
+        if (
+            previous is None
+            or previous.status != SuiteTaskStatus.SUCCEEDED
+            or not _task_result_exists(previous)
+        ):
+            continue
+        task.status = SuiteTaskStatus.SUCCEEDED
+        task.result_path = previous.result_path
+        task.started_at = previous.started_at
+        task.last_heartbeat_at = previous.last_heartbeat_at
+        task.finished_at = previous.finished_at
+        task.return_code = previous.return_code
+
+    augmented_from = list(source_state.augmented_from_state_paths)
+    if source_state_path:
+        resolved_source = str(Path(source_state_path).resolve())
+        if resolved_source not in augmented_from:
+            augmented_from.append(resolved_source)
+    return ExperimentSuiteState(
+        suite_id=config.suite_id,
+        suite_name=config.name,
+        config_path=config_path,
+        augmented_from_state_paths=augmented_from,
+        log_path=log_path,
+        tasks=tasks,
+    )
+
+
 def _is_pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False

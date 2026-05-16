@@ -66,6 +66,7 @@ class ExperimentSuiteState(BaseModel):
     suite_id: str
     suite_name: str
     config_path: Optional[str] = None
+    augmented_from_state_paths: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     cancel_requested: bool = False

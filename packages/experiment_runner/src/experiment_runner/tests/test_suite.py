@@ -160,6 +160,40 @@ def test_reconcile_suite_state_preserves_existing_task_order(tmp_path) -> None:
     ]
 
 
+def test_build_augmented_suite_state_carries_over_only_successes_with_results(tmp_path) -> None:
+    config = _config(tmp_path)
+    source = suite.build_suite_state(config)
+    carried_result = tmp_path / "carried.jsonl"
+    carried_result.write_text("{}\n", encoding="utf-8")
+    empty_result = tmp_path / "empty.jsonl"
+    empty_result.write_text("", encoding="utf-8")
+    source.tasks[0].status = SuiteTaskStatus.SUCCEEDED
+    source.tasks[0].result_path = str(carried_result)
+    source.tasks[1].status = SuiteTaskStatus.SUCCEEDED
+    source.tasks[1].result_path = str(empty_result)
+    source.tasks[2].status = SuiteTaskStatus.FAILED
+    source.tasks[2].result_path = str(tmp_path / "failed.jsonl")
+
+    augmented_config = config.model_copy(update={"suite_id": "augmented", "name": "augmented"})
+    augmented_config.models = [*config.models, "qwen3:32b"]
+
+    augmented = suite.build_augmented_suite_state(
+        augmented_config,
+        source,
+        config_path=str(tmp_path / "augmented.json"),
+        source_state_path=str(tmp_path / "source.state.json"),
+    )
+
+    by_id = {task.task_id: task for task in augmented.tasks}
+    assert by_id[source.tasks[0].task_id].status == SuiteTaskStatus.SUCCEEDED
+    assert by_id[source.tasks[0].task_id].result_path == str(carried_result)
+    assert by_id[source.tasks[1].task_id].status == SuiteTaskStatus.PENDING
+    assert by_id[source.tasks[2].task_id].status == SuiteTaskStatus.PENDING
+    assert any(task.model == "qwen3:32b" and task.status == SuiteTaskStatus.PENDING for task in augmented.tasks)
+    assert source.tasks[1].status == SuiteTaskStatus.SUCCEEDED
+    assert augmented.augmented_from_state_paths == [str((tmp_path / "source.state.json").resolve())]
+
+
 def test_suite_cancel_marks_state_for_cooperative_stop(tmp_path, capsys) -> None:
     config = _config(tmp_path)
     state_path = tmp_path / "suite.state.json"

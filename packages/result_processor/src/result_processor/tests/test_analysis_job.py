@@ -56,6 +56,7 @@ def test_analysis_job_state_writes_suite_metadata(tmp_path) -> None:
         suite_name="suite",
         suite_config_path="suite.json",
         suite_state_path="suite.state.json",
+        augmented_from_state_path="base-analysis.state.json",
     )
     state_path = tmp_path / "analysis.state.json"
 
@@ -66,6 +67,41 @@ def test_analysis_job_state_writes_suite_metadata(tmp_path) -> None:
     assert metadata["suite_name"] == "suite"
     assert metadata["analysis_name"] == "suite analysis"
     assert metadata["input_files"] == [str(runs_path.resolve())]
+    assert metadata["augmented_from_state_path"] == "base-analysis.state.json"
+
+
+def test_copy_matching_analysis_outputs_reuses_matching_result_filenames(tmp_path) -> None:
+    result_a = tmp_path / "experiment" / "a.jsonl"
+    result_b = tmp_path / "experiment" / "b.jsonl"
+    write_jsonl(result_a, [run_payload(run_id="r1")])
+    write_jsonl(result_b, [run_payload(run_id="r2")])
+    source_dir = tmp_path / "analysis" / "base"
+    target_dir = tmp_path / "analysis" / "augmented"
+    write_jsonl(source_dir / "a.jsonl", [analysis_result(run_id="r1")])
+
+    copied = analysis_job.copy_matching_analysis_outputs(
+        source_output_dir=source_dir,
+        target_output_dir=target_dir,
+        input_files=[str(result_a), str(result_b)],
+    )
+    state = analysis_job.build_analysis_job_state(
+        job_name="augmented",
+        experiment_results_dir=str(tmp_path / "experiment"),
+        output_dir=str(target_dir),
+        path_to_corpora="corpora",
+        examiner_model="qwen3:4b",
+        num_ctx=8192,
+        input_files=[str(result_a), str(result_b)],
+        resume=True,
+    )
+
+    assert copied == [target_dir / "a.jsonl"]
+    assert (target_dir / "a.jsonl").read_text(encoding="utf-8") == (source_dir / "a.jsonl").read_text(encoding="utf-8")
+    assert not (target_dir / "b.jsonl").exists()
+    assert [task.status for task in state.tasks] == [
+        AnalysisTaskStatus.SKIPPED,
+        AnalysisTaskStatus.PENDING,
+    ]
 
 
 def test_analysis_job_cancel_and_summary(tmp_path, capsys) -> None:

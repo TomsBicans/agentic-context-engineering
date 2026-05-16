@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,6 +47,7 @@ def save_analysis_metadata(state: AnalysisJobState, state_path: Path) -> None:
         "suite_name": state.suite_name,
         "suite_config_path": state.suite_config_path,
         "suite_state_path": state.suite_state_path,
+        "augmented_from_state_path": state.augmented_from_state_path,
         "created_at": state.created_at.isoformat(),
         "updated_at": state.updated_at.isoformat(),
     }
@@ -75,6 +77,7 @@ def build_analysis_job_state(
     suite_name: str | None = None,
     suite_config_path: str | None = None,
     suite_state_path: str | None = None,
+    augmented_from_state_path: str | None = None,
 ) -> AnalysisJobState:
     tasks: list[AnalysisJobTask] = []
     for input_file in input_files:
@@ -101,6 +104,7 @@ def build_analysis_job_state(
         suite_name=suite_name,
         suite_config_path=suite_config_path,
         suite_state_path=suite_state_path,
+        augmented_from_state_path=augmented_from_state_path,
         num_ctx=num_ctx,
         input_files=[str(Path(f).resolve()) for f in input_files],
         resume=resume,
@@ -128,6 +132,7 @@ def reconcile_analysis_job_state(state: AnalysisJobState) -> AnalysisJobState:
         suite_name=state.suite_name,
         suite_config_path=state.suite_config_path,
         suite_state_path=state.suite_state_path,
+        augmented_from_state_path=state.augmented_from_state_path,
     )
     for task in rebuilt.tasks:
         old = previous.get(_task_key(task.source_file, task.run_id))
@@ -138,6 +143,28 @@ def reconcile_analysis_job_state(state: AnalysisJobState) -> AnalysisJobState:
             task.finished_at = old.finished_at
     state.tasks = rebuilt.tasks
     return state
+
+
+def copy_matching_analysis_outputs(
+    *,
+    source_output_dir: str | Path,
+    target_output_dir: str | Path,
+    input_files: list[str | Path],
+) -> list[Path]:
+    source_dir = Path(source_output_dir)
+    target_dir = Path(target_output_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    copied: list[Path] = []
+    for input_file in input_files:
+        source = source_dir / Path(input_file).name
+        if not source.is_file() or source.stat().st_size == 0:
+            continue
+        target = target_dir / source.name
+        if target.exists():
+            continue
+        shutil.copy2(source, target)
+        copied.append(target)
+    return copied
 
 
 def summarize_analysis_job_state(state: AnalysisJobState) -> dict[str, int | str | bool]:

@@ -372,6 +372,30 @@ def test_copy_suite_config_creates_independent_suite_identity() -> None:
     assert copied.no_trace == config.no_trace
 
 
+def test_augment_suite_config_creates_independent_augment_identity() -> None:
+    config = ExperimentSuiteConfig(
+        suite_id="original-id",
+        name="saved suite",
+        systems=[SystemName.ACE],
+        models=["qwen3:4b"],
+        corpora=[
+            SuiteCorpusSelection(
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="./corpora/questions/solar_system.json",
+                path_to_corpora="./corpora/scraped_data/solar_system_wiki",
+            )
+        ],
+    )
+
+    augmented = ui._augment_suite_config(config)
+
+    assert augmented.suite_id != config.suite_id
+    assert augmented.name == "saved-suite-augment"
+    assert augmented.systems == config.systems
+    assert augmented.models == config.models
+    assert augmented.corpora == config.corpora
+
+
 def test_result_files_from_suite_states_returns_existing_result_paths(tmp_path) -> None:
     existing = tmp_path / "result.jsonl"
     existing.write_text("{}\n", encoding="utf-8")
@@ -414,6 +438,60 @@ def test_result_files_from_suite_states_returns_existing_result_paths(tmp_path) 
     state_path.write_text(state.model_dump_json(), encoding="utf-8")
 
     assert ui._result_files_from_suite_states([state_path]) == [str(existing.resolve())]
+
+
+def test_carried_over_result_files_from_suite_state_uses_augmentation_provenance(tmp_path) -> None:
+    carried = tmp_path / "carried.jsonl"
+    carried.write_text("{}\n", encoding="utf-8")
+    new_result = tmp_path / "new.jsonl"
+    new_result.write_text("{}\n", encoding="utf-8")
+    source_state = ExperimentSuiteState(
+        suite_id="suite-1",
+        suite_name="suite",
+        tasks=[
+            SuiteTask(
+                task_id="t1",
+                index=1,
+                system=SystemName.ACE,
+                model="qwen3:4b",
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="questions.json",
+                path_to_corpora="corpora",
+                question_id="ss_L1_001",
+                question_text="Question?",
+                level=1,
+                command=["python"],
+                status=SuiteTaskStatus.SUCCEEDED,
+                result_path=str(carried),
+            )
+        ],
+    )
+    source_state_path = tmp_path / "source.state.json"
+    source_state_path.write_text(source_state.model_dump_json(), encoding="utf-8")
+    augmented_state = source_state.model_copy(deep=True)
+    augmented_state.suite_id = "suite-2"
+    augmented_state.augmented_from_state_paths = [str(source_state_path.resolve())]
+    augmented_state.tasks.append(
+        SuiteTask(
+            task_id="t2",
+            index=2,
+            system=SystemName.ACE,
+            model="qwen3:14b",
+            corpus=Corpus.SOLAR_SYSTEM_WIKI,
+            questions_file="questions.json",
+            path_to_corpora="corpora",
+            question_id="ss_L1_001",
+            question_text="Question?",
+            level=1,
+            command=["python"],
+            status=SuiteTaskStatus.SUCCEEDED,
+            result_path=str(new_result),
+        )
+    )
+    augmented_state_path = tmp_path / "augmented.state.json"
+    augmented_state_path.write_text(augmented_state.model_dump_json(), encoding="utf-8")
+
+    assert ui._carried_over_result_files_from_suite_state(augmented_state_path) == [str(carried.resolve())]
 
 
 def test_kill_tracked_background_processes_cancels_state_and_processes(tmp_path, monkeypatch) -> None:
