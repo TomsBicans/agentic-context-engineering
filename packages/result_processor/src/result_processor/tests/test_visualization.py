@@ -157,8 +157,12 @@ def test_visualize_results_writes_prefixed_html_pdf_manifest_and_latex_tables(tm
     assert (out_dir / "plots" / "C19_execution_time_vs_analysis_time.html").is_file()
     assert (out_dir / "plots" / "C20_answer_chars_by_model_system.html").is_file()
     assert (out_dir / "plots" / "C26_time_vs_answer_chars_by_system.pdf").is_file()
+    assert (out_dir / "plots" / "C27_support_by_level_model_system.html").is_file()
+    assert (out_dir / "plots" / "C28_support_by_model_system_level.pdf").is_file()
+    assert (out_dir / "plots" / "C29_execution_time_by_level_model_system.html").is_file()
+    assert (out_dir / "plots" / "C30_answer_chars_by_level_model_system.pdf").is_file()
     manifest = json.loads((out_dir / "charts_manifest.json").read_text(encoding="utf-8"))
-    assert len(manifest) == len(CHARTS) == 26
+    assert len(manifest) == len(CHARTS) == 30
     assert manifest[0] == {
         "id": "C01",
         "slug": "support_by_system",
@@ -182,5 +186,37 @@ def test_visualize_results_writes_prefixed_html_pdf_manifest_and_latex_tables(tm
         "html_file": "C26_time_vs_answer_chars_by_system.html",
         "pdf_file": "C26_time_vs_answer_chars_by_system.pdf",
         "latex_label": "fig:c26-time-vs-answer-chars-by-system",
+    }
+    assert manifest[26] == {
+        "id": "C27",
+        "slug": "support_by_level_model_system",
+        "lv_title": "Atbalsta īpatsvars pa sarežģītības līmeni, A1 modeli un sistēmu",
+        "html_file": "C27_support_by_level_model_system.html",
+        "pdf_file": "C27_support_by_level_model_system.pdf",
+        "latex_label": "fig:c27-support-by-level-model-system",
+    }
+    assert manifest[27] == {
+        "id": "C28",
+        "slug": "support_by_model_system_level",
+        "lv_title": "Atbalsta īpatsvars pa A1 modeli, sistēmu un sarežģītības līmeni",
+        "html_file": "C28_support_by_model_system_level.html",
+        "pdf_file": "C28_support_by_model_system_level.pdf",
+        "latex_label": "fig:c28-support-by-model-system-level",
+    }
+    assert manifest[28] == {
+        "id": "C29",
+        "slug": "execution_time_by_level_model_system",
+        "lv_title": "Izpildes laiks pa sarežģītības līmeni, A1 modeli un sistēmu",
+        "html_file": "C29_execution_time_by_level_model_system.html",
+        "pdf_file": "C29_execution_time_by_level_model_system.pdf",
+        "latex_label": "fig:c29-execution-time-by-level-model-system",
+    }
+    assert manifest[29] == {
+        "id": "C30",
+        "slug": "answer_chars_by_level_model_system",
+        "lv_title": "Gala atbildes garums pa sarežģītības līmeni, A1 modeli un sistēmu",
+        "html_file": "C30_answer_chars_by_level_model_system.html",
+        "pdf_file": "C30_answer_chars_by_level_model_system.pdf",
+        "latex_label": "fig:c30-answer-chars-by-level-model-system",
     }
     assert (out_dir / "tables" / "per_system_summary.tex").is_file()

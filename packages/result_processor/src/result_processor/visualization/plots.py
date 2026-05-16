@@ -74,6 +74,14 @@ def _color_map(df: pd.DataFrame, column: str) -> dict[str, str]:
     }
 
 
+def _with_level_label(df: pd.DataFrame) -> pd.DataFrame:
+    return df.assign(level_label=df["level"].astype(int).map(lambda level: f"L{level}"))
+
+
+def _with_system_model_label(df: pd.DataFrame) -> pd.DataFrame:
+    return df.assign(system_model=df["system_name"].astype(str) + " / " + df["model"].astype(str))
+
+
 def support_rate_by_system(df: pd.DataFrame) -> go.Figure:
     grouped = (
         df.dropna(subset=["support_rate"])
@@ -139,6 +147,122 @@ def support_rate_by_level(df: pd.DataFrame) -> go.Figure:
     )
     fig.update_yaxes(range=[0, 1])
     fig.update_xaxes(dtick=1)
+    return fig
+
+
+def support_rate_by_level_model_system(df: pd.DataFrame) -> go.Figure:
+    subset = df.dropna(subset=["support_rate", "level", "model", "system_name"])
+    if subset.empty:
+        return _empty("No support_rate / level / model / system_name data")
+    grouped = (
+        _with_system_model_label(subset)
+        .groupby(["level", "system_model"], as_index=False)["support_rate"]
+        .mean()
+        .sort_values(["level", "system_model"])
+    )
+    fig = px.line(
+        grouped,
+        x="level",
+        y="support_rate",
+        color="system_model",
+        color_discrete_map=_color_map(grouped, "system_model"),
+        category_orders=_category_orders(grouped, "system_model"),
+        markers=True,
+        title="Support rate by difficulty level, A1 model, and system",
+        labels={
+            "level": "Difficulty level",
+            "support_rate": "Support rate",
+            "system_model": "System / A1 model",
+        },
+    )
+    fig.update_yaxes(range=[0, 1])
+    fig.update_xaxes(dtick=1)
+    return fig
+
+
+def support_rate_by_model_system_level(df: pd.DataFrame) -> go.Figure:
+    subset = df.dropna(subset=["support_rate", "level", "model", "system_name"])
+    if subset.empty:
+        return _empty("No support_rate / level / model / system_name data")
+    grouped = (
+        _with_level_label(subset)
+        .groupby(["system_name", "model", "level_label"], as_index=False)["support_rate"]
+        .mean()
+        .sort_values(["system_name", "model", "level_label"])
+    )
+    fig = px.bar(
+        grouped,
+        x="model",
+        y="support_rate",
+        color="level_label",
+        color_discrete_map=_color_map(grouped, "level_label"),
+        category_orders=_category_orders(grouped, "system_name", "model", "level_label"),
+        barmode="group",
+        facet_col="system_name",
+        title="Support rate by A1 model, system, and difficulty level",
+        labels={
+            "model": "A1 model",
+            "support_rate": "Support rate",
+            "level_label": "Difficulty level",
+            "system_name": "System",
+        },
+    )
+    fig.update_yaxes(range=[0, 1])
+    fig.for_each_annotation(lambda annotation: annotation.update(text=annotation.text.split("=")[-1]))
+    return fig
+
+
+def execution_time_by_level_model_system(df: pd.DataFrame) -> go.Figure:
+    subset = df.dropna(subset=["execution_time_s", "level", "model", "system_name"])
+    if subset.empty:
+        return _empty("No execution_time_s / level / model / system_name data")
+    subset = _with_level_label(subset)
+    fig = px.box(
+        subset,
+        x="level_label",
+        y="execution_time_s",
+        color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "level_label", "system_name", "model"),
+        points="all",
+        facet_col="model",
+        hover_data=["question_id", "corpus", "has_answer_error"],
+        title="Execution time by difficulty level, A1 model, and system",
+        labels={
+            "level_label": "Difficulty level",
+            "execution_time_s": "Execution time (s)",
+            "system_name": "System",
+            "model": "A1 model",
+        },
+    )
+    fig.for_each_annotation(lambda annotation: annotation.update(text=annotation.text.split("=")[-1]))
+    return fig
+
+
+def answer_chars_by_level_model_system(df: pd.DataFrame) -> go.Figure:
+    subset = df.dropna(subset=["answer_char_count", "level", "model", "system_name"])
+    if subset.empty:
+        return _empty("No answer_char_count / level / model / system_name data")
+    subset = _with_level_label(subset)
+    fig = px.box(
+        subset,
+        x="level_label",
+        y="answer_char_count",
+        color="system_name",
+        color_discrete_map=_color_map(subset, "system_name"),
+        category_orders=_category_orders(subset, "level_label", "system_name", "model"),
+        points="all",
+        facet_col="model",
+        hover_data=["question_id", "corpus", "execution_time_s", "has_answer_error"],
+        title="Final answer length by difficulty level, A1 model, and system",
+        labels={
+            "level_label": "Difficulty level",
+            "answer_char_count": "Final answer length (characters)",
+            "system_name": "System",
+            "model": "A1 model",
+        },
+    )
+    fig.for_each_annotation(lambda annotation: annotation.update(text=annotation.text.split("=")[-1]))
     return fig
 
 
@@ -770,6 +894,30 @@ CHARTS = (
         "time_vs_answer_chars_by_system",
         "Izpildes laiks pret gala atbildes garumu pa sistēmām",
         time_vs_answer_chars_by_system,
+    ),
+    ChartSpec(
+        "C27",
+        "support_by_level_model_system",
+        "Atbalsta īpatsvars pa sarežģītības līmeni, A1 modeli un sistēmu",
+        support_rate_by_level_model_system,
+    ),
+    ChartSpec(
+        "C28",
+        "support_by_model_system_level",
+        "Atbalsta īpatsvars pa A1 modeli, sistēmu un sarežģītības līmeni",
+        support_rate_by_model_system_level,
+    ),
+    ChartSpec(
+        "C29",
+        "execution_time_by_level_model_system",
+        "Izpildes laiks pa sarežģītības līmeni, A1 modeli un sistēmu",
+        execution_time_by_level_model_system,
+    ),
+    ChartSpec(
+        "C30",
+        "answer_chars_by_level_model_system",
+        "Gala atbildes garums pa sarežģītības līmeni, A1 modeli un sistēmu",
+        answer_chars_by_level_model_system,
     ),
 )
 

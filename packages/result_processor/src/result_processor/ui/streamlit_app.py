@@ -852,8 +852,8 @@ def _render_latest_runs_panel(df: pd.DataFrame, analyses, runs) -> None:
 
 def _tab_charts(df: pd.DataFrame) -> None:
     st.subheader("Charts")
-    if df.empty or df["support_rate"].dropna().empty:
-        st.info("Run analyze first to populate charts.")
+    if df.empty:
+        st.info("No run data available for charts yet.")
         return
 
     plot_names = list(ALL_PLOTS.keys())
@@ -1654,8 +1654,8 @@ def df_from_runs_by_id(runs, run_id: str) -> pd.DataFrame:
 
 def _render_inline_analysis_charts(analysis_df: pd.DataFrame, key: str = "analysis_inline_charts") -> None:
     st.markdown("### Analysis charts")
-    if analysis_df.empty or analysis_df.get("support_rate", pd.Series(dtype=float)).dropna().empty:
-        st.info("No analyzed metrics available for charts yet.")
+    if analysis_df.empty:
+        st.info("No run data available for charts yet.")
         return
     names = list(ALL_PLOTS.keys())
     selected = st.multiselect(
