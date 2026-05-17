@@ -82,6 +82,38 @@ def _with_system_model_label(df: pd.DataFrame) -> pd.DataFrame:
     return df.assign(system_model=df["system_name"].astype(str) + " / " + df["model"].astype(str))
 
 
+def _format_duration(seconds: float) -> str:
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = seconds % 60
+    if h:
+        return f"{h}h {m}m {s:.0f}s"
+    if m:
+        return f"{m}m {s:.0f}s"
+    return f"{s:.1f}s"
+
+
+def _pearson_r(df: pd.DataFrame, col_x: str, col_y: str) -> float:
+    pair = df[[col_x, col_y]].dropna()
+    if len(pair) < 2:
+        return float("nan")
+    return pair[col_x].corr(pair[col_y])
+
+
+def _add_note(fig: go.Figure, text: str, *, margin_b: int = 70) -> None:
+    fig.add_annotation(
+        text=text,
+        xref="paper",
+        yref="paper",
+        x=0.5,
+        y=-0.13,
+        showarrow=False,
+        font=dict(size=11, color="#666666"),
+        align="center",
+    )
+    fig.update_layout(margin=dict(b=margin_b))
+
+
 def support_rate_by_system(df: pd.DataFrame) -> go.Figure:
     grouped = (
         df.dropna(subset=["support_rate"])
@@ -236,6 +268,9 @@ def execution_time_by_level_model_system(df: pd.DataFrame) -> go.Figure:
         },
     )
     fig.for_each_annotation(lambda annotation: annotation.update(text=annotation.text.split("=")[-1]))
+    level_means = subset.groupby("level")["execution_time_s"].mean().sort_index()
+    parts = "  ".join(f"L{int(lvl)}: {_format_duration(val)}" for lvl, val in level_means.items())
+    _add_note(fig, f"Mean per level — {parts}  (n={len(subset)} runs)", margin_b=90)
     return fig
 
 
@@ -263,6 +298,9 @@ def answer_chars_by_level_model_system(df: pd.DataFrame) -> go.Figure:
         },
     )
     fig.for_each_annotation(lambda annotation: annotation.update(text=annotation.text.split("=")[-1]))
+    level_means = subset.groupby("level")["answer_char_count"].mean().sort_index()
+    parts = "  ".join(f"L{int(lvl)}: {val:.0f} chars" for lvl, val in level_means.items())
+    _add_note(fig, f"Mean per level — {parts}  (n={len(subset)} runs)", margin_b=90)
     return fig
 
 
@@ -327,6 +365,7 @@ def answer_chars_by_system(df: pd.DataFrame) -> go.Figure:
         labels={"system_name": "System", "answer_char_count": "Final answer length (characters)"},
     )
     fig.update_layout(showlegend=False)
+    _add_note(fig, f"Grand mean: {subset['answer_char_count'].mean():.0f} chars  (n={len(subset)} runs)")
     return fig
 
 
@@ -347,6 +386,7 @@ def execution_time_by_system(df: pd.DataFrame) -> go.Figure:
         labels={"system_name": "System", "execution_time_s": "Execution time (s)"},
     )
     fig.update_layout(showlegend=False)
+    _add_note(fig, f"Total experiment time: {_format_duration(subset['execution_time_s'].sum())}  (n={len(subset)} runs)")
     return fig
 
 
@@ -371,6 +411,8 @@ def tool_calls_vs_execution_time(df: pd.DataFrame) -> go.Figure:
             "corpus": "Corpus",
         },
     )
+    r = _pearson_r(subset, "tool_call_count", "execution_time_s")
+    _add_note(fig, f"Pearson r(tool calls, execution time) = {r:.3f}  (n={len(subset)})")
     return fig
 
 
@@ -462,6 +504,7 @@ def tool_call_distribution(df: pd.DataFrame) -> go.Figure:
         labels={"system_name": "System", "tool_call_count": "Tool calls"},
     )
     fig.update_layout(showlegend=False)
+    _add_note(fig, f"Grand mean: {subset['tool_call_count'].mean():.1f} tool calls  (n={len(subset)} runs)")
     return fig
 
 
@@ -484,6 +527,9 @@ def verdict_breakdown(df: pd.DataFrame) -> go.Figure:
         title="PASS / FAIL verdicts per system",
         labels={"system_name": "System", "count": "Run count", "verdict": "Verdict"},
     )
+    pass_count = (subset["verdict"] == "PASS").sum()
+    pct = pass_count / len(subset) * 100
+    _add_note(fig, f"Overall pass rate: {pct:.1f}%  ({pass_count} / {len(subset)} runs)")
     return fig
 
 
@@ -504,6 +550,7 @@ def helpfulness_distribution(df: pd.DataFrame) -> go.Figure:
     )
     fig.update_yaxes(range=[0.5, 5.5], dtick=1)
     fig.update_layout(showlegend=False)
+    _add_note(fig, f"Grand mean helpfulness: {subset['helpfulness_rating'].mean():.2f} / 5  (n={len(subset)} runs)")
     return fig
 
 
@@ -639,6 +686,7 @@ def answer_chars_by_model_system(df: pd.DataFrame) -> go.Figure:
             "system_name": "System",
         },
     )
+    _add_note(fig, f"Grand mean: {subset['answer_char_count'].mean():.0f} chars  (n={len(subset)} runs)", margin_b=100)
     return fig
 
 
@@ -662,6 +710,7 @@ def execution_time_by_model_system(df: pd.DataFrame) -> go.Figure:
             "system_name": "System",
         },
     )
+    _add_note(fig, f"Total experiment time: {_format_duration(subset['execution_time_s'].sum())}  (n={len(subset)} runs)", margin_b=100)
     return fig
 
 
@@ -686,6 +735,7 @@ def helpfulness_by_model_system(df: pd.DataFrame) -> go.Figure:
         },
     )
     fig.update_yaxes(range=[0.5, 5.5], dtick=1)
+    _add_note(fig, f"Grand mean helpfulness: {subset['helpfulness_rating'].mean():.2f} / 5  (n={len(subset)} runs)", margin_b=100)
     return fig
 
 
@@ -761,6 +811,9 @@ def verdict_by_model_system(df: pd.DataFrame) -> go.Figure:
         title="PASS / FAIL verdicts by A1 model and system",
         labels={"model": "A1 model", "count": "Run count", "verdict": "Verdict", "system_name": "System"},
     )
+    pass_count = (subset["verdict"] == "PASS").sum()
+    pct = pass_count / len(subset) * 100
+    _add_note(fig, f"Overall pass rate: {pct:.1f}%  ({pass_count} / {len(subset)} runs)", margin_b=110)
     return fig
 
 
@@ -783,6 +836,8 @@ def time_vs_answer_chars_by_system(df: pd.DataFrame) -> go.Figure:
             "system_name": "System",
         },
     )
+    r = _pearson_r(subset, "answer_char_count", "execution_time_s")
+    _add_note(fig, f"Pearson r(answer length, execution time) = {r:.3f}  (n={len(subset)})")
     return fig
 
 
