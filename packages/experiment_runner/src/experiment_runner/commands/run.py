@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -45,6 +47,18 @@ def _output_path(output_dir: str, config: RunConfig) -> Path:
         f"__{uuid4().hex[:8]}.jsonl"
     )
     return Path(output_dir) / filename
+
+
+def _temp_output_path(output_path: Path) -> Path:
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=output_path.parent,
+        prefix=f".{output_path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as tmp:
+        return Path(tmp.name)
 
 
 def _uses_isolated_corpus(config: RunConfig) -> bool:
@@ -99,27 +113,38 @@ def run_experiment(args: argparse.Namespace) -> None:
 
     out_path = _output_path(args.output_dir, config)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = _temp_output_path(out_path)
 
     total = len(questions)
 
-    if _uses_isolated_corpus(config):
-        with out_path.open("x", encoding="utf-8") as f:
-            for i, question in enumerate(questions, 1):
-                sys.stderr.write(f"[{i}/{total}] {question.id}: {question.question[:72]}\n")
-                result = _run_one_question_with_isolated_corpus(config, question)
-                f.write(result.model_dump_json() + "\n")
-                f.flush()
-    else:
-        runner = get_runner(config)
-        runner.setup()
-        try:
-            with out_path.open("x", encoding="utf-8") as f:
+    try:
+        if _uses_isolated_corpus(config):
+            with tmp_path.open("w", encoding="utf-8") as f:
                 for i, question in enumerate(questions, 1):
                     sys.stderr.write(f"[{i}/{total}] {question.id}: {question.question[:72]}\n")
-                    result = runner.run(question)
+                    result = _run_one_question_with_isolated_corpus(config, question)
                     f.write(result.model_dump_json() + "\n")
                     f.flush()
-        finally:
-            runner.teardown()
+                    os.fsync(f.fileno())
+        else:
+            runner = get_runner(config)
+            runner.setup()
+            try:
+                with tmp_path.open("w", encoding="utf-8") as f:
+                    for i, question in enumerate(questions, 1):
+                        sys.stderr.write(f"[{i}/{total}] {question.id}: {question.question[:72]}\n")
+                        result = runner.run(question)
+                        f.write(result.model_dump_json() + "\n")
+                        f.flush()
+                        os.fsync(f.fileno())
+            finally:
+                runner.teardown()
+        os.replace(tmp_path, out_path)
+    except Exception:
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+        raise
 
     sys.stderr.write(f"{RESULT_PATH_PREFIX}{out_path}\n")

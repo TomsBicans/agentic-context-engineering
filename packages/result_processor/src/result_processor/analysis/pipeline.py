@@ -26,6 +26,7 @@ from result_processor.analysis.io import (
     iter_run_results,
     load_existing_run_ids,
 )
+from result_processor.analysis.qa_metrics import QAMetrics, compute_qa_metrics
 from result_processor.models.analysis import (
     AnalysisResult,
     ClaimAnalysis,
@@ -178,6 +179,7 @@ def _analyze_one(
         )
 
     helpfulness, notes = _summarize(run, examiner, claim_analyses)
+    qa_metrics = compute_qa_metrics(run.answer_text, run.expected_facts)
     analysis_time_s = time.perf_counter() - started_at
     return _aggregate(
         run,
@@ -186,6 +188,7 @@ def _analyze_one(
         examiner_model,
         helpfulness,
         notes,
+        qa_metrics=qa_metrics,
         analysis_time_s=analysis_time_s,
         analysis_run_name=analysis_run_name,
         suite_id=suite_id,
@@ -238,6 +241,7 @@ def _aggregate(
     helpfulness: Optional[int],
     notes: str,
     *,
+    qa_metrics: Optional[QAMetrics] = None,
     analysis_time_s: Optional[float] = None,
     analysis_run_name: Optional[str] = None,
     suite_id: Optional[str] = None,
@@ -285,6 +289,10 @@ def _aggregate(
         error_rate=error_rate,
         overclaim_rate=overclaim_rate,
         unsupported_claim_ratio=unsupported_ratio,
+        exact_match=qa_metrics.exact_match if qa_metrics else None,
+        f1=qa_metrics.f1 if qa_metrics else None,
+        precision=qa_metrics.precision if qa_metrics else None,
+        recall=qa_metrics.recall if qa_metrics else None,
         verdict=verdict,
         helpfulness_rating=helpfulness,
         examiner_notes=notes,

@@ -15,6 +15,7 @@ from result_processor.analysis.examiner import ExaminerLLM, _ClaimVerdict
 from result_processor.analysis.excerpt_resolver import ExcerptResolver
 from result_processor.analysis.io import append_analysis, iter_run_results, load_existing_run_ids
 from result_processor.analysis.pipeline import _aggregate, _analyze_one
+from result_processor.analysis.qa_metrics import compute_qa_metrics
 from result_processor.models.analysis import ClaimAnalysis, ClaimStatus, Verdict
 from result_processor.tests.conftest import analysis_result, run_payload, write_jsonl
 
@@ -40,6 +41,38 @@ def test_split_sentences_removes_citations_and_reasoning() -> None:
     text = "<think>hidden.</think>Jupiter is large. It has moons! [Claim.] [file:x.md, lines:0-1]"
 
     assert split_sentences(text) == ["Jupiter is large.", "It has moons!"]
+
+
+def test_qa_metrics_normalize_case_and_punctuation_for_exact_match() -> None:
+    metrics = compute_qa_metrics("Jupiter,   is a PLANET!", ["jupiter is a planet"])
+
+    assert metrics.exact_match == 1.0
+    assert metrics.f1 == 1.0
+    assert metrics.precision == 1.0
+    assert metrics.recall == 1.0
+
+
+def test_qa_metrics_compute_partial_token_overlap() -> None:
+    metrics = compute_qa_metrics("jupiter planet moons", ["jupiter gas giant planet"])
+
+    assert metrics.exact_match == 0.0
+    assert metrics.precision == pytest.approx(2 / 3)
+    assert metrics.recall == pytest.approx(2 / 4)
+    assert metrics.f1 == pytest.approx(4 / 7)
+
+
+def test_qa_metrics_handle_missing_ground_truth_and_empty_answers() -> None:
+    missing_gold = compute_qa_metrics("anything", [])
+    empty_answer = compute_qa_metrics(None, ["jupiter planet"])
+
+    assert missing_gold.exact_match is None
+    assert missing_gold.f1 is None
+    assert missing_gold.precision is None
+    assert missing_gold.recall is None
+    assert empty_answer.exact_match == 0.0
+    assert empty_answer.f1 == 0.0
+    assert empty_answer.precision == 0.0
+    assert empty_answer.recall == 0.0
 
 
 def test_excerpt_resolver_reads_clamped_ranges_and_rejects_bad_references(tmp_path) -> None:
@@ -108,6 +141,10 @@ def test_analyze_one_uses_citations_and_aggregates_examiner_results() -> None:
     assert result.support_rate == 1.0
     assert result.verdict == Verdict.PASS
     assert result.helpfulness_rating == 5
+    assert result.exact_match == 0.0
+    assert result.f1 == pytest.approx(0.8)
+    assert result.precision == pytest.approx(2 / 3)
+    assert result.recall == 1.0
     assert result.analysis_time_s is not None
     assert result.analysis_time_s >= 0.0
 

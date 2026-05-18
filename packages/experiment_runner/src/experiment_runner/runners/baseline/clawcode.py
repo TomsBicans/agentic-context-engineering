@@ -24,6 +24,35 @@ _ALLOWED_TOOLS = "read_file,glob_search,grep_search"
 _OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"
 _OLLAMA_API_KEY = "ollama"
 
+
+def normalize_claw_model(model: str) -> str:
+    # ClawCode requires a provider-prefixed model identifier ("openai/qwen3:8b").
+    # Bare Ollama model names ("qwen3:8b") are rejected as invalid model syntax.
+    return model if model.startswith("openai/") else f"openai/{model}"
+
+
+def build_claw_command(*, model: str, prompt: str) -> list[str]:
+    return [
+        "claw",
+        "--model",
+        normalize_claw_model(model),
+        "--output-format",
+        "json",
+        "--permission-mode",
+        "workspace-write",
+        "--allowedTools",
+        _ALLOWED_TOOLS,
+        prompt,
+    ]
+
+
+def claw_environment_overrides() -> dict[str, str]:
+    return {
+        "OPENAI_BASE_URL": _OLLAMA_BASE_URL,
+        "OPENAI_API_KEY": _OLLAMA_API_KEY,
+    }
+
+
 class ClawCodeRunner(BaseRunner):
     """Runner for the ClawCode CLI baseline.
 
@@ -129,28 +158,10 @@ class ClawCodeRunner(BaseRunner):
         return f"{EXAMINEE_SYSTEM_MESSAGE}\n\nQuestion:\n{question}"
 
     def _invoke_claw(self, prompt: str, workspace: Path) -> subprocess.CompletedProcess:
-        # ClawCode requires a provider-prefixed model identifier ("openai/qwen3:8b").
-        # Bare Ollama model names ("qwen3:8b") are rejected as invalid model syntax.
-        model = self.config.model
-        if not model.startswith("openai/"):
-            model = f"openai/{model}"
-
-        cmd = [
-            "claw",
-            "--model",
-            model,
-            "--output-format",
-            "json",
-            "--permission-mode",
-            "workspace-write",
-            "--allowedTools",
-            _ALLOWED_TOOLS,
-            prompt,
-        ]
+        cmd = build_claw_command(model=self.config.model, prompt=prompt)
 
         env = os.environ.copy()
-        env["OPENAI_BASE_URL"] = _OLLAMA_BASE_URL
-        env["OPENAI_API_KEY"] = _OLLAMA_API_KEY
+        env.update(claw_environment_overrides())
         # Prevent ClawCode from falling back to cloud providers if these keys
         # happen to be set in the parent environment.
         env.pop("ANTHROPIC_API_KEY", None)

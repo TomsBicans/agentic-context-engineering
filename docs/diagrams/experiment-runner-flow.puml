@@ -15,6 +15,17 @@ start
 
 :Parse CLI or dashboard request;
 
+if (Dashboard suite augmentation?) then (yes)
+  :Load base suite config and state;
+  :Create copied editable config\nwith new suite_id and -augment name;
+  :Build planned tasks from edited config;
+  :Carry over matching SUCCEEDED tasks\nonly when result JSONL exists and is non-empty;
+  :Mark failed, cancelled, running,\nand new tasks as PENDING;
+  :Persist augmented suite state\nwith provenance to base state;
+  :Run / resume suite\nexecutes only pending tasks;
+else (no)
+endif
+
 note right
   Alternative entry: **suite run --config <file>**
   expands a YAML config into multiple single-system

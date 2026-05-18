@@ -83,6 +83,12 @@ class AnalysisResult(BaseModel):
     overclaim_rate: float = 0.0
     unsupported_claim_ratio: float = 0.0
 
+    # Standard QA metrics computed against the question's expected facts.
+    exact_match: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    f1: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    precision: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    recall: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+
     verdict: Verdict = Verdict.FAIL
 
     # Optional helpfulness rating on a Likert 1-5 scale.

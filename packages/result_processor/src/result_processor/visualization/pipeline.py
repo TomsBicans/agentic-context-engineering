@@ -1,13 +1,14 @@
 """Orchestrator for the visualize command."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Iterable
 
 from rich.console import Console
 
 from result_processor.visualization.loader import build_dataframe
-from result_processor.visualization.plots import ALL_PLOTS
+from result_processor.visualization.plots import CHARTS, charts_manifest
 from result_processor.visualization.tables import ALL_TABLES
 
 
@@ -38,13 +39,17 @@ def visualize_results(
 
     console.print(f"[bold]Loaded {len(df)} runs[/bold]")
 
-    for name, builder in ALL_PLOTS.items():
+    manifest_path = out_dir / "charts_manifest.json"
+    manifest_path.write_text(json.dumps(charts_manifest(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    console.print(f"  [dim]→[/dim] {manifest_path.relative_to(out_dir.parent)}")
+
+    for chart in CHARTS:
         try:
-            fig = builder(df)
+            fig = chart.builder(df)
         except Exception as exc:
-            console.print(f"  [red]plot {name} failed: {exc}[/red]")
+            console.print(f"  [red]plot {chart.slug} failed: {exc}[/red]")
             continue
-        _export_figure(fig, plots_dir / name, formats, console)
+        _export_figure(fig, plots_dir / chart.file_stem, formats, console)
 
     for name, builder in ALL_TABLES.items():
         try:
@@ -62,7 +67,10 @@ def visualize_results(
 
 
 def _export_figure(fig, base_path: Path, formats: Iterable[str], console: Console) -> None:
-    for fmt in formats:
+    # HTML is the interactive artifact; PDF is the thesis-ready static artifact.
+    # Both are mandatory, while requested formats such as PNG/SVG remain additive.
+    export_formats = dict.fromkeys(["html", "pdf", *formats])
+    for fmt in export_formats:
         path = base_path.with_suffix(f".{fmt}")
         try:
             if fmt == "html":

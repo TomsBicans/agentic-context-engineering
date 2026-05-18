@@ -32,7 +32,7 @@ def _question() -> Question:
         corpus="solar_system_wiki",
         question="What is Mars?",
         level=2,
-        expected_facts=[],
+        expected_facts=["fourth planet", "red planet"],
     )
 
 
@@ -92,6 +92,7 @@ def test_codex_run_marks_corpus_used_only_when_command_event_is_present(monkeypa
     assert result.metrics.corpus_used is True
     assert result.metrics.tool_call_count == 1
     assert result.metrics.tool_call_sequence == ["grep -R Mars ./corpus"]
+    assert result.expected_facts == ["fourth planet", "red planet"]
 
 
 def test_codex_run_does_not_mark_corpus_used_without_command_events(monkeypatch, tmp_path) -> None:

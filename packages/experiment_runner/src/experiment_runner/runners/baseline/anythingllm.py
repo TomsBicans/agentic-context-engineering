@@ -19,6 +19,19 @@ _STORAGE_DIR = Path.home() / "anythingllm-thesis-data"
 _READY_URL = "http://localhost:3001/api/ping"
 _READY_TIMEOUT_SECONDS = 90
 
+
+def build_anythingllm_prompt_command(*, prompt: str, workspace: str) -> list[str]:
+    return [
+        "any",
+        "prompt",
+        prompt,
+        "--workspace",
+        workspace,
+        "--nt",
+        "--no-stream",
+    ]
+
+
 class AnythingLLMRunner(BaseRunner):
     """Runner for the AnythingLLM baseline via the official `any` CLI.
 
@@ -127,15 +140,7 @@ class AnythingLLMRunner(BaseRunner):
         return f"{EXAMINEE_SYSTEM_MESSAGE}\n\nQuestion:\n{question}"
 
     def _invoke_any(self, prompt: str, workspace: str) -> subprocess.CompletedProcess:
-        cmd = [
-            "any",
-            "prompt",
-            prompt,
-            "--workspace",
-            workspace,
-            "--nt",
-            "--no-stream",
-        ]
+        cmd = build_anythingllm_prompt_command(prompt=prompt, workspace=workspace)
 
         return subprocess.run(
             cmd,

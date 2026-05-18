@@ -9,11 +9,19 @@ import pandas as pd
 import pytest
 
 from experiment_runner.models.enums import Corpus, SystemName
-from experiment_runner.models.suite import ExperimentSuiteConfig, ExperimentSuiteState, SuiteCorpusSelection, SuiteTask
+from experiment_runner.models.suite import (
+    ExperimentSuiteConfig,
+    ExperimentSuiteState,
+    SuiteCorpusSelection,
+    SuiteTask,
+    SuiteTaskStatus,
+)
 from result_processor import main as result_main
 from result_processor.commands.analyze import run_analyze
+from result_processor.commands.analysis_job import load_analysis_job_state
 from result_processor.commands.dashboard import run_dashboard
 from result_processor.commands.visualize import run_visualize
+from result_processor.models.analysis_job import AnalysisJobState, AnalysisJobTask, AnalysisTaskStatus
 from result_processor.tests.conftest import analysis_result, run_payload, write_jsonl
 from result_processor.ui import streamlit_app as ui
 
@@ -103,6 +111,76 @@ def test_build_experiment_run_args_includes_selected_options(monkeypatch) -> Non
         "--no-trace",
         "--dry-run",
     ]
+
+
+def test_direct_system_invocation_preview_for_codex() -> None:
+    preview = ui._build_direct_system_invocation_preview(
+        system=SystemName.CHATGPT_CODEX.value,
+        corpus=Corpus.SOLAR_SYSTEM_WIKI.value,
+        model="qwen3:4b",
+        question_text="What is Mars?",
+    )
+
+    assert preview is not None
+    command = preview["command"]
+    assert command[:5] == ["codex", "exec", "--oss", "--local-provider", "ollama"]
+    assert "-m" in command
+    assert "qwen3:4b" in command
+    assert "--json" in command
+    assert str(command[-1]).endswith("Question:\nWhat is Mars?")
+
+
+def test_direct_system_invocation_preview_for_clawcode_prefixes_model_and_env() -> None:
+    preview = ui._build_direct_system_invocation_preview(
+        system=SystemName.CLAWCODE.value,
+        corpus=Corpus.SOLAR_SYSTEM_WIKI.value,
+        model="qwen3:4b",
+        question_text="What is Mars?",
+    )
+
+    assert preview is not None
+    command = preview["command"]
+    assert command[:3] == ["claw", "--model", "openai/qwen3:4b"]
+    assert "--allowedTools" in command
+    assert preview["environment"]["OPENAI_BASE_URL"] == "http://127.0.0.1:11434/v1"
+
+
+def test_direct_system_invocation_preview_for_claude_code_local() -> None:
+    preview = ui._build_direct_system_invocation_preview(
+        system=SystemName.CLAUDE_CODE_LOCAL.value,
+        corpus=Corpus.SOLAR_SYSTEM_WIKI.value,
+        model="qwen3:4b",
+        question_text="What is Mars?",
+    )
+
+    assert preview is not None
+    command = preview["command"]
+    assert command[:3] == ["claude", "--model", "qwen3:4b"]
+    assert "-p" in command
+    assert preview["environment"]["ANTHROPIC_BASE_URL"] == "http://localhost:11434"
+
+
+def test_direct_system_invocation_preview_for_anythingllm() -> None:
+    preview = ui._build_direct_system_invocation_preview(
+        system=SystemName.ANYTHINGLLM.value,
+        corpus=Corpus.SOLAR_SYSTEM_WIKI.value,
+        model="qwen3:4b",
+        question_text="What is Mars?",
+    )
+
+    assert preview is not None
+    command = preview["command"]
+    assert command[:2] == ["any", "prompt"]
+    assert command[-3:] == [Corpus.SOLAR_SYSTEM_WIKI.value, "--nt", "--no-stream"]
+
+
+def test_direct_system_invocation_preview_returns_none_for_ace() -> None:
+    assert ui._build_direct_system_invocation_preview(
+        system=SystemName.ACE.value,
+        corpus=Corpus.SOLAR_SYSTEM_WIKI.value,
+        model="qwen3:4b",
+        question_text="What is Mars?",
+    ) is None
 
 
 def test_build_suite_run_and_cancel_args(monkeypatch) -> None:
@@ -255,6 +333,7 @@ def test_suite_widget_state_from_config_includes_per_corpus_selection_fields() -
     assert state["suite_levels_solar_system_wiki"] == [2]
     assert state["suite_ids_solar_system_wiki"] == ["ss_L2_005"]
     assert state["suite_num_ctx"] == 16384
+    assert state["suite_task_timeout_s"] == 240
     assert state["suite_reasoning_enabled"] is True
     assert state["suite_no_trace"] is True
 
@@ -291,6 +370,30 @@ def test_copy_suite_config_creates_independent_suite_identity() -> None:
     assert copied.num_ctx == config.num_ctx
     assert copied.reasoning_enabled == config.reasoning_enabled
     assert copied.no_trace == config.no_trace
+
+
+def test_augment_suite_config_creates_independent_augment_identity() -> None:
+    config = ExperimentSuiteConfig(
+        suite_id="original-id",
+        name="saved suite",
+        systems=[SystemName.ACE],
+        models=["qwen3:4b"],
+        corpora=[
+            SuiteCorpusSelection(
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="./corpora/questions/solar_system.json",
+                path_to_corpora="./corpora/scraped_data/solar_system_wiki",
+            )
+        ],
+    )
+
+    augmented = ui._augment_suite_config(config)
+
+    assert augmented.suite_id != config.suite_id
+    assert augmented.name == "saved-suite-augment"
+    assert augmented.systems == config.systems
+    assert augmented.models == config.models
+    assert augmented.corpora == config.corpora
 
 
 def test_result_files_from_suite_states_returns_existing_result_paths(tmp_path) -> None:
@@ -337,6 +440,124 @@ def test_result_files_from_suite_states_returns_existing_result_paths(tmp_path) 
     assert ui._result_files_from_suite_states([state_path]) == [str(existing.resolve())]
 
 
+def test_carried_over_result_files_from_suite_state_uses_augmentation_provenance(tmp_path) -> None:
+    carried = tmp_path / "carried.jsonl"
+    carried.write_text("{}\n", encoding="utf-8")
+    new_result = tmp_path / "new.jsonl"
+    new_result.write_text("{}\n", encoding="utf-8")
+    source_state = ExperimentSuiteState(
+        suite_id="suite-1",
+        suite_name="suite",
+        tasks=[
+            SuiteTask(
+                task_id="t1",
+                index=1,
+                system=SystemName.ACE,
+                model="qwen3:4b",
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="questions.json",
+                path_to_corpora="corpora",
+                question_id="ss_L1_001",
+                question_text="Question?",
+                level=1,
+                command=["python"],
+                status=SuiteTaskStatus.SUCCEEDED,
+                result_path=str(carried),
+            )
+        ],
+    )
+    source_state_path = tmp_path / "source.state.json"
+    source_state_path.write_text(source_state.model_dump_json(), encoding="utf-8")
+    augmented_state = source_state.model_copy(deep=True)
+    augmented_state.suite_id = "suite-2"
+    augmented_state.augmented_from_state_paths = [str(source_state_path.resolve())]
+    augmented_state.tasks.append(
+        SuiteTask(
+            task_id="t2",
+            index=2,
+            system=SystemName.ACE,
+            model="qwen3:14b",
+            corpus=Corpus.SOLAR_SYSTEM_WIKI,
+            questions_file="questions.json",
+            path_to_corpora="corpora",
+            question_id="ss_L1_001",
+            question_text="Question?",
+            level=1,
+            command=["python"],
+            status=SuiteTaskStatus.SUCCEEDED,
+            result_path=str(new_result),
+        )
+    )
+    augmented_state_path = tmp_path / "augmented.state.json"
+    augmented_state_path.write_text(augmented_state.model_dump_json(), encoding="utf-8")
+
+    assert ui._carried_over_result_files_from_suite_state(augmented_state_path) == [str(carried.resolve())]
+
+
+def test_kill_tracked_background_processes_cancels_state_and_processes(tmp_path, monkeypatch) -> None:
+    suite_dir = tmp_path / "suites"
+    analysis_dir = tmp_path / "analysis"
+    suite_dir.mkdir()
+    analysis_dir.mkdir()
+    suite_state = ExperimentSuiteState(
+        suite_id="suite-1",
+        suite_name="suite",
+        active_pid=12345,
+        tasks=[
+            SuiteTask(
+                task_id="t1",
+                index=1,
+                system=SystemName.ACE,
+                model="qwen3:4b",
+                corpus=Corpus.SOLAR_SYSTEM_WIKI,
+                questions_file="questions.json",
+                path_to_corpora="corpora",
+                question_id="ss_L1_001",
+                question_text="Question?",
+                level=1,
+                command=["python"],
+                status=SuiteTaskStatus.RUNNING,
+            )
+        ],
+    )
+    suite_state_path = suite_dir / "suite.state.json"
+    suite_state_path.write_text(suite_state.model_dump_json(), encoding="utf-8")
+    analysis_state = AnalysisJobState(
+        job_name="analysis",
+        experiment_results_dir="results",
+        output_dir=str(tmp_path / "analysis-output"),
+        path_to_corpora="corpora",
+        examiner_model="qwen3:4b",
+        active_pid=12346,
+        tasks=[
+            AnalysisJobTask(
+                run_id="run-1",
+                source_file="run.jsonl",
+                output_file="analysis.jsonl",
+                status=AnalysisTaskStatus.RUNNING,
+            )
+        ],
+    )
+    analysis_state_path = analysis_dir / "analysis.state.json"
+    analysis_state_path.write_text(analysis_state.model_dump_json(), encoding="utf-8")
+    killed: list[int] = []
+    monkeypatch.setattr(ui, "_terminate_pid_tree", lambda pid: killed.append(pid) or True)
+
+    messages = ui._kill_tracked_background_processes(suite_dir, analysis_dir)
+
+    assert killed == [12345, 12346]
+    assert any("Killed suite process tree pid=12345" in message for message in messages)
+    assert any("Killed analysis process tree pid=12346" in message for message in messages)
+    updated_suite = ui.load_suite_state(suite_state_path)
+    assert updated_suite.cancel_requested is True
+    assert updated_suite.active_pid is None
+    assert updated_suite.tasks[0].status == SuiteTaskStatus.CANCELLED
+    updated_analysis = load_analysis_job_state(analysis_state_path)
+    assert updated_analysis.cancel_requested is True
+    assert updated_analysis.active_pid is None
+    assert updated_analysis.tasks[0].status == AnalysisTaskStatus.CANCELLED
+
+
 def test_analysis_run_records_link_legacy_directory_by_suite_result_names(tmp_path) -> None:
     result_path = tmp_path / "experiment" / "run.jsonl"
     write_jsonl(result_path, [run_payload(run_id="r1")])
@@ -378,7 +599,11 @@ def test_analysis_run_records_link_legacy_directory_by_suite_result_names(tmp_pa
     assert records[0]["result_files"] == [result_path]
 
 
-def test_create_analysis_export_zip_includes_suite_analysis_and_charts(tmp_path) -> None:
+def test_create_analysis_export_zip_includes_suite_analysis_and_charts(tmp_path, monkeypatch) -> None:
+    def fake_write_image(_fig, file, *args, **kwargs) -> None:
+        file.write(b"%PDF-1.4\n")
+
+    monkeypatch.setattr("plotly.graph_objects.Figure.write_image", fake_write_image)
     result_path = tmp_path / "experiment" / "run.jsonl"
     write_jsonl(result_path, [run_payload(run_id="r1")])
     analysis_dir = tmp_path / "analysis" / "analysis-a"
@@ -412,10 +637,105 @@ def test_create_analysis_export_zip_includes_suite_analysis_and_charts(tmp_path)
     assert "suite/suite.json" in names
     assert "suite/suite.state.json" in names
     assert "tables/analysis_results.csv" in names
-    assert "charts/time_vs_answer_chars.html" in names
-    assert "charts/error_rate_by_system.html" in names
+    assert "charts/charts_manifest.json" in names
+    assert "charts/C05_time_vs_answer_chars.html" in names
+    assert "charts/C05_time_vs_answer_chars.pdf" in names
+    assert "charts/C11_error_rate_by_system.html" in names
+    assert "charts/C11_error_rate_by_system.pdf" in names
+    assert "charts/C20_answer_chars_by_model_system.html" in names
+    assert "charts/C20_answer_chars_by_model_system.pdf" in names
+    assert "charts/C26_time_vs_answer_chars_by_system.html" in names
+    assert "charts/C26_time_vs_answer_chars_by_system.pdf" in names
+    assert "charts/C29_execution_time_by_level_model_system.html" in names
+    assert "charts/C29_execution_time_by_level_model_system.pdf" in names
+    assert "charts/C30_answer_chars_by_level_model_system.html" in names
+    assert "charts/C30_answer_chars_by_level_model_system.pdf" in names
     assert "experiment_data/analysis-a/run.jsonl" in names
     assert "analysis_results/analysis-a/run.jsonl" in names
+
+
+def test_create_analysis_export_zip_reports_pdf_export_errors(tmp_path, monkeypatch) -> None:
+    def fail_write_image(_fig, file, *args, **kwargs) -> None:
+        raise RuntimeError("kaleido is missing chrome")
+
+    monkeypatch.setattr("plotly.graph_objects.Figure.write_image", fail_write_image)
+    result_path = tmp_path / "experiment" / "run.jsonl"
+    write_jsonl(result_path, [run_payload(run_id="r1")])
+    analysis_dir = tmp_path / "analysis" / "analysis-a"
+    write_jsonl(analysis_dir / "run.jsonl", [analysis_result(run_id="r1")])
+    config_path = tmp_path / "suite.json"
+    state_path = tmp_path / "suite.state.json"
+    config_path.write_text("{}\n", encoding="utf-8")
+    state_path.write_text("{}\n", encoding="utf-8")
+    suite_record = {
+        "suite_id": "suite-1",
+        "suite_name": "suite",
+        "state_path": state_path,
+        "config_path": config_path,
+    }
+    analysis_record = {
+        "analysis_name": "analysis-a",
+        "analysis_dir": analysis_dir,
+        "analysis_files": [analysis_dir / "run.jsonl"],
+        "result_files": [result_path],
+        "metadata": {},
+    }
+    analysis_df = ui._combined_analysis_dataframe([analysis_record])
+    export_errors: list[str] = []
+
+    zip_bytes = ui._create_analysis_export_zip(suite_record, [analysis_record], analysis_df, export_errors)
+
+    import zipfile
+    from io import BytesIO
+    with zipfile.ZipFile(BytesIO(zip_bytes)) as zf:
+        names = set(zf.namelist())
+        error_text = zf.read("charts/pdf_export_errors.txt").decode("utf-8")
+    assert "charts/C01_support_by_system.html" in names
+    assert "charts/C01_support_by_system.pdf" not in names
+    assert "charts/pdf_export_errors.txt" in names
+    assert export_errors
+    assert "C01 support_by_system: PDF export failed: kaleido is missing chrome" in error_text
+
+
+def test_create_analysis_export_zip_reports_progress(tmp_path, monkeypatch) -> None:
+    def fake_write_image(_fig, file, *args, **kwargs) -> None:
+        file.write(b"%PDF-1.4\n")
+
+    monkeypatch.setattr("plotly.graph_objects.Figure.write_image", fake_write_image)
+    result_path = tmp_path / "experiment" / "run.jsonl"
+    write_jsonl(result_path, [run_payload(run_id="r1")])
+    analysis_dir = tmp_path / "analysis" / "analysis-a"
+    write_jsonl(analysis_dir / "run.jsonl", [analysis_result(run_id="r1")])
+    config_path = tmp_path / "suite.json"
+    state_path = tmp_path / "suite.state.json"
+    config_path.write_text("{}\n", encoding="utf-8")
+    state_path.write_text("{}\n", encoding="utf-8")
+    suite_record = {
+        "suite_id": "suite-1",
+        "suite_name": "suite",
+        "state_path": state_path,
+        "config_path": config_path,
+    }
+    analysis_record = {
+        "analysis_name": "analysis-a",
+        "analysis_dir": analysis_dir,
+        "analysis_files": [analysis_dir / "run.jsonl"],
+        "result_files": [result_path],
+        "metadata": {},
+    }
+    analysis_df = ui._combined_analysis_dataframe([analysis_record])
+    progress_updates: list[tuple[int, int, str]] = []
+
+    ui._create_analysis_export_zip(
+        suite_record,
+        [analysis_record],
+        analysis_df,
+        progress_callback=lambda current, total, label: progress_updates.append((current, total, label)),
+    )
+
+    assert progress_updates[0] == (0, 90, "Preparing chart export")
+    assert progress_updates[-1] == (90, 90, "Exported PDF for C30 answer_chars_by_level_model_system")
+    assert any(update == (2, 90, "Exported HTML for C01 support_by_system") for update in progress_updates)
 
 
 def test_run_id_from_result_path_reads_first_valid_jsonl_row(tmp_path) -> None:
@@ -424,6 +744,8 @@ def test_run_id_from_result_path_reads_first_valid_jsonl_row(tmp_path) -> None:
 
     assert ui._run_id_from_result_path(str(path)) == "run-123"
     assert ui._run_id_from_result_path(str(tmp_path / "missing.jsonl")) is None
+    assert ui._run_id_from_result_path(float("nan")) is None
+    assert ui._run_from_result_path(float("nan")) is None
 
 
 def test_dataframe_for_single_run_contains_detail_fields(tmp_path) -> None:

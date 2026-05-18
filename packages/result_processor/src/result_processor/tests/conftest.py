@@ -24,6 +24,7 @@ def run_payload(
         "corpus": "solar_system_wiki",
         "question_id": question_id,
         "question_text": "What is Jupiter?",
+        "expected_facts": ["Jupiter is a planet"],
         "model": "qwen3:4b",
         "reasoning_enabled": False,
         "answer_text": answer_text,
@@ -64,6 +65,10 @@ def analysis_result(
         claims_bad_reference=1 if status == ClaimStatus.BAD_REFERENCE else 0,
         support_rate=1.0 if status == ClaimStatus.SUPPORTED else 0.0,
         error_rate=0.0 if status == ClaimStatus.SUPPORTED else 1.0,
+        exact_match=1.0,
+        f1=1.0,
+        precision=1.0,
+        recall=1.0,
         verdict=Verdict.PASS if status == ClaimStatus.SUPPORTED else Verdict.FAIL,
         helpfulness_rating=4,
     )

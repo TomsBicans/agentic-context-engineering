@@ -36,6 +36,7 @@ class ExperimentSuiteConfig(BaseModel):
     corpora: list[SuiteCorpusSelection]
     output_dir: str = "./data/experiment_results"
     num_ctx: int = 8192
+    task_timeout_s: int = 240
     reasoning_enabled: bool = False
     no_trace: bool = False
 
@@ -56,6 +57,7 @@ class SuiteTask(BaseModel):
     result_path: Optional[str] = None
     error: Optional[str] = None
     started_at: Optional[datetime] = None
+    last_heartbeat_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     return_code: Optional[int] = None
 
@@ -64,9 +66,11 @@ class ExperimentSuiteState(BaseModel):
     suite_id: str
     suite_name: str
     config_path: Optional[str] = None
+    augmented_from_state_paths: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     cancel_requested: bool = False
+    runner_pid: Optional[int] = None
     active_pid: Optional[int] = None
     log_path: Optional[str] = None
     tasks: list[SuiteTask] = Field(default_factory=list)

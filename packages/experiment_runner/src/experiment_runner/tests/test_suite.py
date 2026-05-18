@@ -14,6 +14,7 @@ from experiment_runner.models.suite import (
     ExperimentSuiteConfig,
     ExperimentSuiteState,
     SuiteCorpusSelection,
+    SuiteTask,
     SuiteTaskStatus,
 )
 
@@ -57,19 +58,19 @@ def _config(tmp_path: Path) -> ExperimentSuiteConfig:
     )
 
 
-def test_suite_tasks_expand_cross_product_and_sort_by_model_corpus_question_system(tmp_path) -> None:
+def test_suite_tasks_expand_cross_product_and_sort_by_model_corpus_system_question(tmp_path) -> None:
     config = _config(tmp_path)
 
     tasks = suite.build_suite_tasks(config)
 
     assert [(t.model, t.level, t.question_id, t.system.value) for t in tasks] == [
         ("qwen3:4b", 1, "ss_L1_001", "ace"),
-        ("qwen3:4b", 1, "ss_L1_001", "clawcode"),
         ("qwen3:4b", 2, "ss_L2_002", "ace"),
+        ("qwen3:4b", 1, "ss_L1_001", "clawcode"),
         ("qwen3:4b", 2, "ss_L2_002", "clawcode"),
         ("qwen3:14b", 1, "ss_L1_001", "ace"),
-        ("qwen3:14b", 1, "ss_L1_001", "clawcode"),
         ("qwen3:14b", 2, "ss_L2_002", "ace"),
+        ("qwen3:14b", 1, "ss_L1_001", "clawcode"),
         ("qwen3:14b", 2, "ss_L2_002", "clawcode"),
     ]
     assert tasks[0].command == [
@@ -142,6 +143,57 @@ def test_reconcile_suite_state_preserves_completed_task_status(tmp_path) -> None
     assert [task.index for task in reconciled.tasks] == list(range(1, 9))
 
 
+def test_reconcile_suite_state_preserves_existing_task_order(tmp_path) -> None:
+    config = _config(tmp_path)
+    old_order = suite.build_suite_tasks(config)
+    old_order = sorted(old_order, key=lambda t: (t.model, t.corpus.value, t.level, t.question_id, t.system.value))
+    for index, task in enumerate(old_order, 1):
+        task.index = index
+    state = ExperimentSuiteState(suite_id=config.suite_id, suite_name=config.name, tasks=old_order)
+
+    reconciled = suite.reconcile_suite_state(config, state)
+
+    assert [task.task_id for task in reconciled.tasks] == [task.task_id for task in old_order]
+    assert [(task.index, task.task_id) for task in reconciled.tasks] == [
+        (index, task.task_id)
+        for index, task in enumerate(old_order, 1)
+    ]
+
+
+def test_build_augmented_suite_state_carries_over_only_successes_with_results(tmp_path) -> None:
+    config = _config(tmp_path)
+    source = suite.build_suite_state(config)
+    carried_result = tmp_path / "carried.jsonl"
+    carried_result.write_text("{}\n", encoding="utf-8")
+    empty_result = tmp_path / "empty.jsonl"
+    empty_result.write_text("", encoding="utf-8")
+    source.tasks[0].status = SuiteTaskStatus.SUCCEEDED
+    source.tasks[0].result_path = str(carried_result)
+    source.tasks[1].status = SuiteTaskStatus.SUCCEEDED
+    source.tasks[1].result_path = str(empty_result)
+    source.tasks[2].status = SuiteTaskStatus.FAILED
+    source.tasks[2].result_path = str(tmp_path / "failed.jsonl")
+
+    augmented_config = config.model_copy(update={"suite_id": "augmented", "name": "augmented"})
+    augmented_config.models = [*config.models, "qwen3:32b"]
+
+    augmented = suite.build_augmented_suite_state(
+        augmented_config,
+        source,
+        config_path=str(tmp_path / "augmented.json"),
+        source_state_path=str(tmp_path / "source.state.json"),
+    )
+
+    by_id = {task.task_id: task for task in augmented.tasks}
+    assert by_id[source.tasks[0].task_id].status == SuiteTaskStatus.SUCCEEDED
+    assert by_id[source.tasks[0].task_id].result_path == str(carried_result)
+    assert by_id[source.tasks[1].task_id].status == SuiteTaskStatus.PENDING
+    assert by_id[source.tasks[2].task_id].status == SuiteTaskStatus.PENDING
+    assert any(task.model == "qwen3:32b" and task.status == SuiteTaskStatus.PENDING for task in augmented.tasks)
+    assert source.tasks[1].status == SuiteTaskStatus.SUCCEEDED
+    assert augmented.augmented_from_state_paths == [str((tmp_path / "source.state.json").resolve())]
+
+
 def test_suite_cancel_marks_state_for_cooperative_stop(tmp_path, capsys) -> None:
     config = _config(tmp_path)
     state_path = tmp_path / "suite.state.json"
@@ -163,6 +215,144 @@ def test_result_path_from_output_parses_prefix_from_last_matching_line() -> None
 
 def test_result_path_from_output_returns_none_when_prefix_absent() -> None:
     assert suite._result_path_from_output(["no match here"]) is None
+
+
+def test_run_suite_marks_timed_out_task_failed(tmp_path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    config.task_timeout_s = 1
+    task = SuiteTask(
+        task_id="slow-task",
+        index=1,
+        system=SystemName.ACE,
+        model="qwen3:4b",
+        corpus=Corpus.SOLAR_SYSTEM_WIKI,
+        questions_file=config.corpora[0].questions_file,
+        path_to_corpora=config.corpora[0].path_to_corpora,
+        question_id="ss_L1_001",
+        question_text="Slow?",
+        level=1,
+        command=[sys.executable, "-c", "import time; print('started', flush=True); time.sleep(10)"],
+    )
+    monkeypatch.setattr(suite, "build_suite_tasks", lambda _config: [task])
+
+    state = suite.run_suite(config, tmp_path / "suite.state.json")
+
+    assert state.tasks[0].status == SuiteTaskStatus.FAILED
+    assert state.tasks[0].error == "Task timed out after 1s"
+    assert state.active_pid is None
+    assert "task timed out after 1s" in (tmp_path / "suite.state.log").read_text(encoding="utf-8")
+
+
+def test_run_suite_timeout_handles_partial_stdout_line(tmp_path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    config.task_timeout_s = 1
+    task = SuiteTask(
+        task_id="partial-output-task",
+        index=1,
+        system=SystemName.ACE,
+        model="qwen3:4b",
+        corpus=Corpus.SOLAR_SYSTEM_WIKI,
+        questions_file=config.corpora[0].questions_file,
+        path_to_corpora=config.corpora[0].path_to_corpora,
+        question_id="ss_L1_001",
+        question_text="Partial?",
+        level=1,
+        command=[
+            sys.executable,
+            "-c",
+            "import sys, time; sys.stdout.write('partial output'); sys.stdout.flush(); time.sleep(10)",
+        ],
+    )
+    monkeypatch.setattr(suite, "build_suite_tasks", lambda _config: [task])
+
+    state = suite.run_suite(config, tmp_path / "suite.state.json")
+
+    assert state.tasks[0].status == SuiteTaskStatus.FAILED
+    assert state.tasks[0].error == "Task timed out after 1s"
+    assert "partial output" in (tmp_path / "suite.state.log").read_text(encoding="utf-8")
+
+
+def test_run_suite_tracks_immediate_success_result_path(tmp_path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    result_path = tmp_path / "instant.jsonl"
+    task = SuiteTask(
+        task_id="instant-task",
+        index=1,
+        system=SystemName.ACE,
+        model="qwen3:4b",
+        corpus=Corpus.SOLAR_SYSTEM_WIKI,
+        questions_file=config.corpora[0].questions_file,
+        path_to_corpora=config.corpora[0].path_to_corpora,
+        question_id="ss_L1_001",
+        question_text="Instant?",
+        level=1,
+        command=[
+            sys.executable,
+            "-c",
+            (
+                "from pathlib import Path; "
+                f"p=Path({str(result_path)!r}); "
+                "p.write_text('{}\\n', encoding='utf-8'); "
+                f"print('{suite.RESULT_PATH_PREFIX}{result_path}')"
+            ),
+        ],
+    )
+    monkeypatch.setattr(suite, "build_suite_tasks", lambda _config: [task])
+
+    state = suite.run_suite(config, tmp_path / "suite.state.json")
+
+    assert state.tasks[0].status == SuiteTaskStatus.SUCCEEDED
+    assert state.tasks[0].result_path == str(result_path)
+
+
+def test_run_suite_persists_heartbeat_for_long_running_task(tmp_path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    config.task_timeout_s = 2
+    task = SuiteTask(
+        task_id="heartbeat-task",
+        index=1,
+        system=SystemName.ACE,
+        model="qwen3:4b",
+        corpus=Corpus.SOLAR_SYSTEM_WIKI,
+        questions_file=config.corpora[0].questions_file,
+        path_to_corpora=config.corpora[0].path_to_corpora,
+        question_id="ss_L1_001",
+        question_text="Heartbeat?",
+        level=1,
+        command=[sys.executable, "-c", "import time; print('started', flush=True); time.sleep(0.4)"],
+    )
+    monkeypatch.setattr(suite, "TASK_HEARTBEAT_INTERVAL_S", 0.1)
+    monkeypatch.setattr(suite, "build_suite_tasks", lambda _config: [task])
+
+    state = suite.run_suite(config, tmp_path / "suite.state.json")
+
+    assert state.tasks[0].last_heartbeat_at is not None
+    assert state.tasks[0].started_at is not None
+    assert state.tasks[0].last_heartbeat_at > state.tasks[0].started_at
+    assert "task still running" in (tmp_path / "suite.state.log").read_text(encoding="utf-8")
+
+
+def test_run_suite_rejects_success_without_result_path(tmp_path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    task = SuiteTask(
+        task_id="missing-result-task",
+        index=1,
+        system=SystemName.ACE,
+        model="qwen3:4b",
+        corpus=Corpus.SOLAR_SYSTEM_WIKI,
+        questions_file=config.corpora[0].questions_file,
+        path_to_corpora=config.corpora[0].path_to_corpora,
+        question_id="ss_L1_001",
+        question_text="Missing result?",
+        level=1,
+        command=[sys.executable, "-c", "pass"],
+    )
+    monkeypatch.setattr(suite, "build_suite_tasks", lambda _config: [task])
+
+    state = suite.run_suite(config, tmp_path / "suite.state.json")
+
+    assert state.tasks[0].status == SuiteTaskStatus.FAILED
+    assert state.tasks[0].error == "Command exited successfully but did not report a non-empty result file."
 
 
 def test_experiment_runner_parses_suite_subcommands() -> None:

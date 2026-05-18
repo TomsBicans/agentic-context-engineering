@@ -15,6 +15,15 @@ start
 
 :Select experiment result JSONL files;
 
+if (Dashboard analysis augmentation?) then (yes)
+  :Select augmented suite state\nand base analysis output directory;
+  :Create new analysis output directory\nand analysis job state;
+  :Copy matching base analysis JSONL files\nby source result filename;
+  :Build tasks for all augmented suite\nresult files;
+  :Resume mode marks copied run IDs\nas skipped and leaves new runs pending;
+else (no)
+endif
+
 note right
   Alternative entry: **analysis-job run**
   manages a persistent job with resumable

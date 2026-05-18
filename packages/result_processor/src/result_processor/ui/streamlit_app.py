@@ -10,21 +10,28 @@ import io
 import json
 import os
 import re
+import signal
 import shlex
 import subprocess
 import sys
+import time
 import uuid
 import zipfile
+from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
+from agent.prompts import EXAMINEE_SYSTEM_MESSAGE
 from experiment_runner.commands.suite import (
+    build_augmented_suite_state,
     build_suite_tasks,
     load_suite_config,
     load_suite_state,
     save_suite_config,
+    save_suite_state,
     summarize_suite_state,
 )
 from experiment_runner.models.enums import AutomationLevel, Corpus, SystemName
@@ -37,8 +44,13 @@ from experiment_runner.models.suite import (
     suite_slug,
 )
 from experiment_runner.runners.registry import DISABLED_SYSTEMS, SYSTEM_AUTOMATION_LEVELS
+from experiment_runner.runners.baseline.anythingllm import build_anythingllm_prompt_command
+from experiment_runner.runners.baseline.claudecodelocal import build_claude_command, claude_environment_overrides
+from experiment_runner.runners.baseline.clawcode import build_claw_command, claw_environment_overrides
+from experiment_runner.runners.baseline.gptcodexlocal import build_codex_command
 from result_processor.commands.analysis_job import (
     build_analysis_job_state,
+    copy_matching_analysis_outputs,
     load_analysis_job_state,
     save_analysis_job_state,
     summarize_analysis_job_state,
@@ -50,7 +62,7 @@ from result_processor.visualization.loader import (
     load_analyses,
     load_runs,
 )
-from result_processor.visualization.plots import ALL_PLOTS
+from result_processor.visualization.plots import ALL_PLOTS, CHARTS, charts_manifest
 
 _AUTOMATION_BADGE: dict[AutomationLevel, str] = {
     AutomationLevel.FULL: "⚙ automated",
@@ -213,6 +225,93 @@ def _shell_command(args: list[str]) -> str:
 def _render_shell_command_preview(command: str) -> None:
     st.markdown("Shell command")
     st.code(command, language="bash")
+
+
+def _examinee_prompt(question: str) -> str:
+    return f"{EXAMINEE_SYSTEM_MESSAGE}\n\nQuestion:\n{question}"
+
+
+def _build_direct_system_invocation_preview(
+    *,
+    system: str,
+    corpus: str,
+    model: str,
+    question_text: str,
+) -> dict[str, object] | None:
+    """Mirror the external CLI subprocess command used by system runners."""
+    prompt = _examinee_prompt(question_text)
+    if system == SystemName.CHATGPT_CODEX.value:
+        return {
+            "command": build_codex_command(model=model, prompt=prompt),
+            "cwd": "temporary per-question workspace containing ./corpus -> selected corpus path",
+            "notes": [
+                "The runner strips nested-agent environment variables before invoking Codex.",
+            ],
+        }
+    if system == SystemName.CLAWCODE.value:
+        return {
+            "command": build_claw_command(model=model, prompt=prompt),
+            "cwd": "temporary per-question workspace containing ./corpus -> selected corpus path",
+            "environment": claw_environment_overrides(),
+            "notes": [
+                "ANTHROPIC_API_KEY and DASHSCOPE_API_KEY are removed before invocation.",
+            ],
+        }
+    if system == SystemName.CLAUDE_CODE_LOCAL.value:
+        return {
+            "command": build_claude_command(model=model, prompt=prompt),
+            "cwd": "temporary per-question workspace containing ./corpus -> selected corpus path",
+            "environment": claude_environment_overrides(),
+            "notes": [
+                "OPENAI_BASE_URL, OPENAI_API_KEY, and nested-agent environment variables are removed before invocation.",
+            ],
+        }
+    if system == SystemName.ANYTHINGLLM.value:
+        return {
+            "command": build_anythingllm_prompt_command(prompt=prompt, workspace=corpus),
+            "cwd": "dashboard / experiment-runner working directory",
+            "notes": [
+                "AnythingLLM setup starts the Docker container separately before this query command runs.",
+            ],
+        }
+    return None
+
+
+def _render_direct_system_invocation_preview(
+    *,
+    system: str,
+    corpus: str,
+    model: str,
+    selected_ids: list[str],
+    available_ids: list[str],
+    questions_meta: dict[str, str],
+) -> None:
+    preview_id = selected_ids[0] if selected_ids else available_ids[0] if available_ids else None
+    question_text = questions_meta.get(preview_id or "", "<question text>")
+    preview = _build_direct_system_invocation_preview(
+        system=system,
+        corpus=corpus,
+        model=model,
+        question_text=question_text,
+    )
+    with st.expander("Direct system CLI command", expanded=False):
+        if preview is None:
+            st.info("This system is invoked in-process or manually, so there is no external system CLI command to preview.")
+            return
+        st.caption(
+            f"Preview for `{preview_id or 'selected question'}`. The experiment runner repeats this pattern per question."
+        )
+        if cwd := preview.get("cwd"):
+            st.markdown(f"**Working directory:** `{cwd}`")
+        environment = preview.get("environment")
+        if isinstance(environment, dict) and environment:
+            st.markdown("**Environment overrides:**")
+            st.code("\n".join(f"{key}={value}" for key, value in environment.items()), language="bash")
+        st.markdown("**Command:**")
+        st.code(_shell_command(preview["command"]), language="bash")
+        notes = preview.get("notes")
+        if isinstance(notes, list) and notes:
+            st.caption(" ".join(str(note) for note in notes))
 
 
 def _parse_ollama_list(output: str) -> list[str]:
@@ -388,6 +487,183 @@ def _start_background_subprocess(args: list[str], log_path: Path) -> int:
     return process.pid
 
 
+def _is_process_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _suite_runner_alive(state_path: Path) -> tuple[bool, int | None]:
+    """Return (is_alive, pid) for the suite runner at state_path.
+
+    Prefers runner_pid (the run_suite process itself, alive for the full run)
+    over active_pid (the current task subprocess, which is None between tasks).
+    """
+    if not state_path.exists():
+        return False, None
+    try:
+        state = load_suite_state(state_path)
+    except Exception:
+        return False, None
+    runner_pid = state.runner_pid
+    if runner_pid is not None and _is_process_alive(runner_pid):
+        return True, runner_pid
+    active_pid = state.active_pid
+    if active_pid is not None and _is_process_alive(active_pid):
+        return True, active_pid
+    return False, None
+
+
+def _child_pids(pid: int) -> list[int]:
+    children_path = Path("/proc") / str(pid) / "task" / str(pid) / "children"
+    try:
+        raw = children_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return []
+    return [int(value) for value in raw.split() if value.isdigit()]
+
+
+def _process_tree_pids(pid: int) -> list[int]:
+    seen: set[int] = set()
+
+    def visit(current: int) -> None:
+        if current in seen:
+            return
+        seen.add(current)
+        for child in _child_pids(current):
+            visit(child)
+
+    visit(pid)
+    return sorted(seen, reverse=True)
+
+
+def _terminate_pid_tree(pid: int, *, grace_s: float = 5.0) -> bool:
+    if pid == os.getpid() or not _is_process_alive(pid):
+        return False
+
+    pids = _process_tree_pids(pid)
+    if not pids:
+        pids = [pid]
+
+    # Dashboard-launched suite/task processes are session leaders. Killing the
+    # process group catches children that may not appear in /proc by the time
+    # we scan, while the pgid check prevents killing the Streamlit process group.
+    try:
+        if os.getpgid(pid) == pid:
+            os.killpg(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        pass
+
+    for target in pids:
+        if target == os.getpid():
+            continue
+        try:
+            os.kill(target, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            continue
+
+    deadline = time.monotonic() + grace_s
+    while time.monotonic() < deadline:
+        if not any(_is_process_alive(target) for target in pids):
+            return True
+        time.sleep(0.1)
+
+    try:
+        if os.getpgid(pid) == pid:
+            os.killpg(pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    for target in pids:
+        if target == os.getpid():
+            continue
+        try:
+            os.kill(target, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            continue
+    return True
+
+
+def _analysis_state_paths(analysis_dir: Path) -> list[Path]:
+    if not analysis_dir.exists():
+        return []
+    return sorted(analysis_dir.glob("*.state.json"))
+
+
+def _cancel_tracked_suite_state(state_path: Path) -> int | None:
+    state = load_suite_state(state_path)
+    pid = state.active_pid
+    now = datetime.now(timezone.utc)
+    state.cancel_requested = True
+    state.active_pid = None
+    for task in state.tasks:
+        if task.status == SuiteTaskStatus.RUNNING:
+            task.status = SuiteTaskStatus.CANCELLED
+            task.error = "Killed from dashboard."
+            task.finished_at = now
+    save_suite_state(state_path, state)
+    return pid
+
+
+def _cancel_tracked_analysis_state(state_path: Path) -> int | None:
+    state = load_analysis_job_state(state_path)
+    pid = state.active_pid
+    now = datetime.now(timezone.utc)
+    state.cancel_requested = True
+    state.active_pid = None
+    for task in state.tasks:
+        if task.status == AnalysisTaskStatus.RUNNING:
+            task.status = AnalysisTaskStatus.CANCELLED
+            task.error = "Killed from dashboard."
+            task.finished_at = now
+    save_analysis_job_state(state_path, state)
+    return pid
+
+
+def _kill_tracked_background_processes(suite_dir: Path, analysis_dir: Path) -> list[str]:
+    messages: list[str] = []
+    targets: list[tuple[str, Path, int]] = []
+
+    for state_path in _suite_state_paths(suite_dir):
+        try:
+            pid = _cancel_tracked_suite_state(state_path)
+        except Exception as exc:
+            messages.append(f"{state_path.name}: could not update suite state: {exc}")
+            continue
+        if pid:
+            targets.append(("suite", state_path, pid))
+
+    for state_path in _analysis_state_paths(analysis_dir):
+        try:
+            pid = _cancel_tracked_analysis_state(state_path)
+        except Exception as exc:
+            messages.append(f"{state_path.name}: could not update analysis state: {exc}")
+            continue
+        if pid:
+            targets.append(("analysis", state_path, pid))
+
+    seen_pids: set[int] = set()
+    for kind, state_path, pid in targets:
+        if pid in seen_pids:
+            continue
+        seen_pids.add(pid)
+        if _terminate_pid_tree(pid):
+            messages.append(f"Killed {kind} process tree pid={pid} from {state_path.name}.")
+        else:
+            messages.append(f"No live {kind} process found for pid={pid} from {state_path.name}.")
+
+    if not targets and not messages:
+        messages.append("No tracked suite or analysis subprocesses found.")
+    return messages
+
+
 def _sidebar() -> dict:
     st.sidebar.header("Configuration")
     experiment_dir = st.sidebar.text_input(
@@ -422,6 +698,11 @@ def _sidebar() -> dict:
     if st.sidebar.button("🔄 Refresh data", width="stretch"):
         st.cache_data.clear()
         st.rerun()
+
+    if st.sidebar.button("🛑 Kill tracked subprocesses", width="stretch"):
+        messages = _kill_tracked_background_processes(Path(suite_dir), Path(analysis_dir))
+        st.sidebar.warning("\n".join(messages))
+        st.cache_data.clear()
 
     return {
         "experiment_dir": Path(experiment_dir),
@@ -573,8 +854,8 @@ def _render_latest_runs_panel(df: pd.DataFrame, analyses, runs) -> None:
 
 def _tab_charts(df: pd.DataFrame) -> None:
     st.subheader("Charts")
-    if df.empty or df["support_rate"].dropna().empty:
-        st.info("Run analyze first to populate charts.")
+    if df.empty:
+        st.info("No run data available for charts yet.")
         return
 
     plot_names = list(ALL_PLOTS.keys())
@@ -684,6 +965,12 @@ def _render_run_details(df: pd.DataFrame, analyses, runs, run_id: str) -> None:
     cols[2].metric("Verdict", analysis.verdict.value)
     cols[3].metric("Helpfulness", analysis.helpfulness_rating or "—")
 
+    cols = st.columns(4)
+    cols[0].metric("EM", f"{analysis.exact_match:.2f}" if analysis.exact_match is not None else "—")
+    cols[1].metric("F1", f"{analysis.f1:.2f}" if analysis.f1 is not None else "—")
+    cols[2].metric("Precision", f"{analysis.precision:.2f}" if analysis.precision is not None else "—")
+    cols[3].metric("Recall", f"{analysis.recall:.2f}" if analysis.recall is not None else "—")
+
     if analysis.examiner_notes:
         st.markdown(f"**Examiner notes:** {analysis.examiner_notes}")
 
@@ -786,6 +1073,34 @@ def _result_files_from_suite_states(state_paths: list[Path]) -> list[str]:
             if task.result_path and Path(task.result_path).is_file():
                 paths.add(str(Path(task.result_path).resolve()))
     return sorted(paths)
+
+
+def _carried_over_result_files_from_suite_state(state_path: Path) -> list[str]:
+    try:
+        state = load_suite_state(state_path)
+    except Exception:
+        return []
+    source_by_task_id: dict[str, str] = {}
+    for source_path_raw in state.augmented_from_state_paths:
+        source_path = Path(source_path_raw)
+        if not source_path.is_file():
+            continue
+        try:
+            source_state = load_suite_state(source_path)
+        except Exception:
+            continue
+        for task in source_state.tasks:
+            if task.result_path and Path(task.result_path).is_file():
+                source_by_task_id[task.task_id] = str(Path(task.result_path).resolve())
+
+    carried: set[str] = set()
+    for task in state.tasks:
+        if not task.result_path or task.task_id not in source_by_task_id:
+            continue
+        result_path = Path(task.result_path)
+        if result_path.is_file() and str(result_path.resolve()) == source_by_task_id[task.task_id]:
+            carried.add(str(result_path.resolve()))
+    return sorted(carried)
 
 
 def _suite_records(suite_dir: Path) -> list[dict]:
@@ -905,7 +1220,13 @@ def _combined_analysis_dataframe(records: list[dict]) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
-def _create_analysis_export_zip(suite_record: dict, analysis_records: list[dict], analysis_df: pd.DataFrame) -> bytes:
+def _create_analysis_export_zip(
+    suite_record: dict,
+    analysis_records: list[dict],
+    analysis_df: pd.DataFrame,
+    export_errors: list[str] | None = None,
+    progress_callback: Callable[[int, int, str], None] | None = None,
+) -> bytes:
     manifest = {
         "suite": {
             "suite_id": suite_record["suite_id"],
@@ -933,11 +1254,45 @@ def _create_analysis_export_zip(suite_record: dict, analysis_records: list[dict]
             zf.write(suite_record["state_path"], f"suite/{suite_record['state_path'].name}")
         if not analysis_df.empty:
             zf.writestr("tables/analysis_results.csv", analysis_df.to_csv(index=False))
-            for name, builder in ALL_PLOTS.items():
+            zf.writestr("charts/charts_manifest.json", json.dumps(charts_manifest(), indent=2, ensure_ascii=False) + "\n")
+            chart_count = len(CHARTS)
+            total_steps = chart_count * 3
+            completed_steps = 0
+            if progress_callback is not None:
+                progress_callback(completed_steps, total_steps, "Preparing chart export")
+            for chart in CHARTS:
                 try:
-                    zf.writestr(f"charts/{name}.html", builder(analysis_df).to_html(include_plotlyjs="cdn"))
-                except Exception:
+                    fig = chart.builder(analysis_df)
+                except Exception as exc:
+                    if export_errors is not None:
+                        export_errors.append(f"{chart.id} {chart.slug}: chart build failed: {exc}")
+                    completed_steps += 3
+                    if progress_callback is not None:
+                        progress_callback(completed_steps, total_steps, f"Skipped {chart.id} {chart.slug}")
                     continue
+                completed_steps += 1
+                if progress_callback is not None:
+                    progress_callback(completed_steps, total_steps, f"Built {chart.id} {chart.slug}")
+                try:
+                    zf.writestr(f"charts/{chart.html_file}", fig.to_html(include_plotlyjs="cdn"))
+                except Exception as exc:
+                    if export_errors is not None:
+                        export_errors.append(f"{chart.id} {chart.slug}: HTML export failed: {exc}")
+                completed_steps += 1
+                if progress_callback is not None:
+                    progress_callback(completed_steps, total_steps, f"Exported HTML for {chart.id} {chart.slug}")
+                try:
+                    pdf_buffer = io.BytesIO()
+                    fig.write_image(pdf_buffer, format="pdf")
+                    zf.writestr(f"charts/{chart.pdf_file}", pdf_buffer.getvalue())
+                except Exception as exc:
+                    if export_errors is not None:
+                        export_errors.append(f"{chart.id} {chart.slug}: PDF export failed: {exc}")
+                completed_steps += 1
+                if progress_callback is not None:
+                    progress_callback(completed_steps, total_steps, f"Exported PDF for {chart.id} {chart.slug}")
+            if export_errors:
+                zf.writestr("charts/pdf_export_errors.txt", "\n\n".join(export_errors) + "\n")
         for record in analysis_records:
             prefix = suite_slug(record["analysis_name"])
             for path in record["result_files"]:
@@ -950,6 +1305,43 @@ def _create_analysis_export_zip(suite_record: dict, analysis_records: list[dict]
             if meta_path.is_file():
                 zf.write(meta_path, f"analysis_results/{prefix}/analysis.meta.json")
     return buffer.getvalue()
+
+
+def _file_signature(path: Path) -> dict:
+    if not path.is_file():
+        return {"path": str(path), "exists": False}
+    stat = path.stat()
+    return {
+        "path": str(path),
+        "exists": True,
+        "mtime_ns": stat.st_mtime_ns,
+        "size": stat.st_size,
+    }
+
+
+def _analysis_export_signature(suite_record: dict, analysis_records: list[dict], analysis_df: pd.DataFrame) -> str:
+    """Return a stable signature for the selected export input files."""
+    payload = {
+        "suite": {
+            "suite_id": suite_record.get("suite_id"),
+            "suite_name": suite_record.get("suite_name"),
+            "state_path": _file_signature(suite_record["state_path"]),
+            "config_path": _file_signature(suite_record["config_path"]),
+        },
+        "analyses": [
+            {
+                "analysis_name": record["analysis_name"],
+                "analysis_dir": str(record["analysis_dir"]),
+                "result_files": [_file_signature(Path(path)) for path in record["result_files"]],
+                "analysis_files": [_file_signature(Path(path)) for path in record["analysis_files"]],
+                "meta": _file_signature(record["analysis_dir"] / "analysis.meta.json"),
+            }
+            for record in analysis_records
+        ],
+        "rows": len(analysis_df),
+        "run_ids": sorted(str(run_id) for run_id in analysis_df.get("run_id", pd.Series(dtype=str)).dropna()),
+    }
+    return json.dumps(payload, sort_keys=True)
 
 
 def _analysis_job_paths(analysis_root: Path, analysis_name: str) -> tuple[Path, Path, Path]:
@@ -1106,6 +1498,10 @@ def _render_existing_analysis_results(cfg: dict, runs) -> None:
             "model",
             "verdict",
             "support_rate",
+            "exact_match",
+            "f1",
+            "precision",
+            "recall",
             "helpfulness_rating",
             "execution_time_s",
             "tool_call_count",
@@ -1192,6 +1588,10 @@ def _render_suite_centric_analysis_results(cfg: dict, runs) -> None:
             "model",
             "verdict",
             "support_rate",
+            "exact_match",
+            "f1",
+            "precision",
+            "recall",
             "helpfulness_rating",
             "execution_time_s",
             "tool_call_count",
@@ -1215,14 +1615,61 @@ def _render_suite_centric_analysis_results(cfg: dict, runs) -> None:
             _render_run_details(analysis_df, load_analyses(analysis_dir), runs, row["run_id"])
 
     if selected_records and not analysis_df.empty:
-        zip_bytes = _create_analysis_export_zip(selected_suite, selected_records, analysis_df)
-        st.download_button(
-            "Export selected",
-            data=zip_bytes,
-            file_name=f"{suite_slug(selected_suite['suite_name'])}-analysis-export.zip",
-            mime="application/zip",
+        export_signature = _analysis_export_signature(selected_suite, selected_records, analysis_df)
+        export_state_key = "suite_analysis_export_zip"
+        export_state = st.session_state.get(export_state_key)
+        export_ready = isinstance(export_state, dict) and export_state.get("signature") == export_signature
+
+        if st.button(
+            "Build export zip",
+            type="primary",
             width="stretch",
-        )
+            help="Generate CSV, HTML charts, PDF charts, raw experiment JSONL, and analysis JSONL for the selected analyses.",
+        ):
+            export_errors: list[str] = []
+            with st.status("Preparing export zip", expanded=True) as export_status:
+                export_progress = st.progress(0.0, text="Starting chart export")
+
+                def update_export_progress(current: int, total: int, label: str) -> None:
+                    export_progress.progress(min(current / max(total, 1), 1.0), text=f"{current}/{total} - {label}")
+
+                zip_bytes = _create_analysis_export_zip(
+                    selected_suite,
+                    selected_records,
+                    analysis_df,
+                    export_errors,
+                    update_export_progress,
+                )
+                export_progress.progress(1.0, text="Export zip ready")
+                export_status.update(label="Export zip ready", state="complete", expanded=False)
+            st.session_state[export_state_key] = {
+                "signature": export_signature,
+                "bytes": zip_bytes,
+                "errors": export_errors,
+                "file_name": f"{suite_slug(selected_suite['suite_name'])}-analysis-export.zip",
+            }
+            export_state = st.session_state[export_state_key]
+            export_ready = True
+
+        if export_ready:
+            export_errors = export_state.get("errors", [])
+            if export_errors:
+                st.warning(
+                    f"Export completed, but {len(export_errors)} chart artifact(s) failed. "
+                    "HTML files are still included; see the details below and charts/pdf_export_errors.txt in the zip."
+                )
+                with st.expander("Chart export errors", expanded=False):
+                    st.code("\n\n".join(export_errors), language="text")
+            st.download_button(
+                "Download export zip",
+                data=export_state["bytes"],
+                file_name=export_state["file_name"],
+                mime="application/zip",
+                width="stretch",
+                on_click="ignore",
+            )
+        else:
+            st.caption("Export zip is generated only when you press Build export zip.")
     _render_inline_analysis_charts(analysis_df, key="suite_centric_analysis_charts")
 
     unlinked = [record for record in analysis_records if record.get("suite_key") is None]
@@ -1237,8 +1684,8 @@ def df_from_runs_by_id(runs, run_id: str) -> pd.DataFrame:
 
 def _render_inline_analysis_charts(analysis_df: pd.DataFrame, key: str = "analysis_inline_charts") -> None:
     st.markdown("### Analysis charts")
-    if analysis_df.empty or analysis_df.get("support_rate", pd.Series(dtype=float)).dropna().empty:
-        st.info("No analyzed metrics available for charts yet.")
+    if analysis_df.empty:
+        st.info("No run data available for charts yet.")
         return
     names = list(ALL_PLOTS.keys())
     selected = st.multiselect(
@@ -1251,13 +1698,17 @@ def _render_inline_analysis_charts(analysis_df: pd.DataFrame, key: str = "analys
         st.plotly_chart(ALL_PLOTS[name](analysis_df), width="stretch", key=f"{key}_{name}")
 
 
+def _is_valid_path_value(value) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
 def _run_id_from_result_path(result_path: str | None) -> str | None:
     run = _run_from_result_path(result_path)
     return run.run_id if run else None
 
 
-def _run_from_result_path(result_path: str | None) -> RunResult | None:
-    if not result_path:
+def _run_from_result_path(result_path) -> RunResult | None:
+    if not _is_valid_path_value(result_path):
         return None
     path = Path(result_path)
     if not path.is_file():
@@ -1328,24 +1779,46 @@ def _suite_state_dataframe(state_path: Path) -> tuple[dict, pd.DataFrame]:
             "system": task.system.value,
             "result_path": task.result_path,
             "run_id": _run_id_from_result_path(task.result_path),
+            "started_at": task.started_at,
+            "last_heartbeat_at": task.last_heartbeat_at,
+            "finished_at": task.finished_at,
             "return_code": task.return_code,
             "error": task.error,
         }
         for task in state.tasks
     ]
+    summary["updated_at"] = state.updated_at
+    summary["active_pid"] = state.active_pid
     return summary, pd.DataFrame(rows)
 
 
-def _render_suite_progress(state_path: Path, df: pd.DataFrame, analyses, runs) -> None:
-    summary, tasks_df = _suite_state_dataframe(state_path)
+def _elapsed_seconds_since(value) -> int | None:
+    if value is None or pd.isna(value):
+        return None
+    if not isinstance(value, datetime):
+        value = pd.to_datetime(value).to_pydatetime()
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return max(int((datetime.now(timezone.utc) - value).total_seconds()), 0)
+
+
+@st.fragment(run_every=10)
+def _render_suite_live_status(state_path: Path) -> None:
+    """Progress bar, metrics, and running-task info. Auto-refreshes every 10 s.
+
+    Kept intentionally minimal — no interactive widgets — so the fragment
+    timer never conflicts with on_select reruns from the task table.
+    """
+    try:
+        summary, tasks_df = _suite_state_dataframe(state_path)
+    except Exception:
+        return
     if not summary:
-        st.info("No persisted suite state yet.")
         return
 
     total = int(summary["total"])
     completed = int(summary["completed"])
-    progress = completed / total if total else 0.0
-    st.progress(progress, text=f"{completed}/{total} task(s) completed")
+    st.progress(completed / total if total else 0.0, text=f"{completed}/{total} task(s) completed")
 
     cols = st.columns(6)
     cols[0].metric("Total", total)
@@ -1356,38 +1829,76 @@ def _render_suite_progress(state_path: Path, df: pd.DataFrame, analyses, runs) -
     cols[5].metric("Cancelled", summary[SuiteTaskStatus.CANCELLED.value])
 
     if summary["cancel_requested"]:
-        st.warning("Cancellation has been requested. The suite stops before starting the next task.")
+        still_running = int(summary.get(SuiteTaskStatus.RUNNING.value, 0)) > 0
+        if still_running:
+            st.warning("Cancellation requested — suite will stop after the current task finishes.")
+        else:
+            pending = int(summary.get(SuiteTaskStatus.PENDING.value, 0))
+            msg = (
+                f"Suite was cancelled. {int(summary['completed'])}/{total} tasks completed."
+                + (f" {pending} task(s) still pending — click **Run / resume suite** to continue." if pending else "")
+            )
+            st.info(msg)
 
     if not tasks_df.empty:
-        event = st.dataframe(
-            tasks_df,
-            width="stretch",
-            hide_index=True,
-            on_select="rerun",
-            selection_mode="single-row",
-            key="suite_tasks_table",
-        )
-        selected_rows = event.selection.rows if event.selection else []
-        if selected_rows:
-            selected = tasks_df.iloc[selected_rows[0]]
-            run_id = selected.get("run_id")
-            if run_id and not df.empty and run_id in set(df["run_id"]):
-                st.divider()
-                _render_run_details(df, analyses, runs, run_id)
-            elif selected.get("result_path"):
-                run = _run_from_result_path(selected.get("result_path"))
-                if run is None:
-                    st.warning("The selected task result file could not be read.")
-                else:
-                    st.divider()
-                    _render_run_details(
-                        _dataframe_for_single_run(run),
-                        analyses,
-                        [run],
-                        run.run_id,
-                    )
+        running_rows = tasks_df[tasks_df["status"] == SuiteTaskStatus.RUNNING.value]
+        if not running_rows.empty:
+            running = running_rows.iloc[0]
+            elapsed_s = _elapsed_seconds_since(running.get("started_at"))
+            heartbeat_age_s = _elapsed_seconds_since(running.get("last_heartbeat_at"))
+            heartbeat_text = (
+                f", last heartbeat {heartbeat_age_s}s ago"
+                if heartbeat_age_s is not None
+                else ""
+            )
+            st.info(
+                "Running "
+                f"{int(running['index'])}/{total}: `{running['system']}` "
+                f"`{running['model']}` `{running['question_id']}` "
+                f"(pid={summary.get('active_pid')}, elapsed={elapsed_s or 0}s{heartbeat_text})"
+            )
+
+
+def _render_suite_progress(state_path: Path, df: pd.DataFrame, analyses, runs) -> None:
+    _render_suite_live_status(state_path)
+
+    summary, tasks_df = _suite_state_dataframe(state_path)
+    if not summary:
+        st.info("No persisted suite state yet.")
+        return
+
+    if tasks_df.empty:
+        return
+
+    event = st.dataframe(
+        tasks_df,
+        width="stretch",
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="suite_tasks_table",
+    )
+    selected_rows = event.selection.rows if event.selection else []
+    if selected_rows:
+        selected = tasks_df.iloc[selected_rows[0]]
+        run_id = selected.get("run_id")
+        if run_id and not df.empty and run_id in set(df["run_id"]):
+            st.divider()
+            _render_run_details(df, analyses, runs, run_id)
+        elif _is_valid_path_value(selected.get("result_path")):
+            run = _run_from_result_path(selected.get("result_path"))
+            if run is None:
+                st.warning("The selected task result file could not be read.")
             else:
-                st.info("The selected task has not produced a result file yet.")
+                st.divider()
+                _render_run_details(
+                    _dataframe_for_single_run(run),
+                    analyses,
+                    [run],
+                    run.run_id,
+                )
+        else:
+            st.info("The selected task has not produced a result file yet.")
 
 
 def _suite_task_preview(config: ExperimentSuiteConfig) -> pd.DataFrame:
@@ -1452,6 +1963,7 @@ def _suite_widget_state_from_config(
         "suite_corpora": [selection.corpus.value for selection in config.corpora if
                           selection.corpus.value in CORPUS_DEFAULTS],
         "suite_num_ctx": config.num_ctx,
+        "suite_task_timeout_s": config.task_timeout_s,
         "suite_reasoning_enabled": config.reasoning_enabled,
         "suite_no_trace": config.no_trace,
         "suite_output_dir": config.output_dir,
@@ -1471,6 +1983,16 @@ def _copy_suite_config(config: ExperimentSuiteConfig) -> ExperimentSuiteConfig:
         update={
             "suite_id": str(uuid.uuid4()),
             "name": suite_slug(f"{config.name}-copy"),
+        },
+    )
+
+
+def _augment_suite_config(config: ExperimentSuiteConfig) -> ExperimentSuiteConfig:
+    return config.model_copy(
+        deep=True,
+        update={
+            "suite_id": str(uuid.uuid4()),
+            "name": suite_slug(f"{config.name}-augment"),
         },
     )
 
@@ -1495,17 +2017,34 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
             format_func=lambda p: p.name,
             index=0,
         )
-        cols = st.columns(2)
+        cols = st.columns(3)
         if selected_config_path and cols[0].button("Load selected suite", width="stretch"):
             st.session_state["loaded_suite_config_path"] = str(selected_config_path)
             st.session_state.pop("copied_suite_config_json", None)
+            st.session_state.pop("augmented_suite_source_state_path", None)
+            st.session_state.pop("augmented_suite_config_id", None)
             st.rerun()
         if selected_config_path and cols[1].button("Copy selected suite", width="stretch"):
             copied = _copy_suite_config(load_suite_config(selected_config_path))
             st.session_state["copied_suite_config_json"] = copied.model_dump_json()
             st.session_state.pop("loaded_suite_config_path", None)
             st.session_state.pop("suite_loaded_config_for", None)
+            st.session_state.pop("augmented_suite_source_state_path", None)
+            st.session_state.pop("augmented_suite_config_id", None)
             st.rerun()
+        if selected_config_path and cols[2].button("Augment selected suite", width="stretch"):
+            base_config = load_suite_config(selected_config_path)
+            base_state_path = default_state_path(selected_config_path, base_config)
+            if not base_state_path.is_file():
+                st.warning(f"No suite state found for `{selected_config_path.name}`.")
+            else:
+                copied = _augment_suite_config(base_config)
+                st.session_state["copied_suite_config_json"] = copied.model_dump_json()
+                st.session_state["augmented_suite_source_state_path"] = str(base_state_path.resolve())
+                st.session_state["augmented_suite_config_id"] = copied.suite_id
+                st.session_state.pop("loaded_suite_config_path", None)
+                st.session_state.pop("suite_loaded_config_for", None)
+                st.rerun()
 
     loaded_path = st.session_state.get("loaded_suite_config_path")
     if loaded_path and Path(loaded_path).is_file():
@@ -1520,7 +2059,12 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
     if copied_config_json:
         try:
             copied_config = ExperimentSuiteConfig.model_validate_json(copied_config_json)
-            st.info("Copied suite config. Save it to create a separate suite.")
+            if st.session_state.get("augmented_suite_config_id") == copied_config.suite_id:
+                st.info(
+                    "Augmented suite draft. Edit and save it, then build augmented state before running."
+                )
+            else:
+                st.info("Copied suite config. Save it to create a separate suite.")
         except Exception as exc:
             st.warning(f"Could not copy suite config: {exc}")
             st.session_state.pop("copied_suite_config_json", None)
@@ -1542,6 +2086,7 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
     st.session_state.setdefault("suite_models", [DEFAULT_MODEL if DEFAULT_MODEL in model_options else model_options[0]])
     st.session_state.setdefault("suite_corpora", ["solar_system_wiki"])
     st.session_state.setdefault("suite_num_ctx", 8192)
+    st.session_state.setdefault("suite_task_timeout_s", 240)
     st.session_state.setdefault("suite_reasoning_enabled", False)
     st.session_state.setdefault("suite_no_trace", True)
     st.session_state.setdefault("suite_output_dir", str(cfg["experiment_dir"]))
@@ -1623,7 +2168,7 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
             st.rerun()
         cols[1].caption(f"Suggested: `{suggested_name}`")
 
-    cols = st.columns(3)
+    cols = st.columns(4)
     num_ctx = cols[0].number_input(
         "suite num_ctx",
         min_value=1024,
@@ -1631,11 +2176,18 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
         step=1024,
         key="suite_num_ctx",
     )
-    reasoning_enabled = cols[1].checkbox(
+    task_timeout_s = cols[1].number_input(
+        "suite task_timeout_s",
+        min_value=10,
+        max_value=3600,
+        step=10,
+        key="suite_task_timeout_s",
+    )
+    reasoning_enabled = cols[2].checkbox(
         "suite reasoning_enabled",
         key="suite_reasoning_enabled",
     )
-    no_trace = cols[2].checkbox(
+    no_trace = cols[3].checkbox(
         "suite no_trace",
         key="suite_no_trace",
     )
@@ -1652,6 +2204,7 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
         corpora=corpus_selections,
         output_dir=output_dir,
         num_ctx=int(num_ctx),
+        task_timeout_s=int(task_timeout_s),
         reasoning_enabled=reasoning_enabled,
         no_trace=no_trace,
     )
@@ -1663,6 +2216,23 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
     config_path, state_path, launcher_log_path = _suite_paths(suite_dir, config)
     run_args = _build_suite_run_args(str(config_path), str(state_path))
     cancel_args = _build_suite_cancel_args(str(state_path))
+    augmentation_source_path = st.session_state.get("augmented_suite_source_state_path")
+    is_augmentation_draft = (
+        copied_config is not None
+        and st.session_state.get("augmented_suite_config_id") == copied_config.suite_id
+        and bool(augmentation_source_path)
+    )
+    augmentation_state_ready = True
+    if is_augmentation_draft:
+        augmentation_state_ready = False
+        if state_path.is_file():
+            try:
+                augmentation_state_ready = (
+                    str(Path(augmentation_source_path).resolve())
+                    in load_suite_state(state_path).augmented_from_state_paths
+                )
+            except Exception:
+                augmentation_state_ready = False
 
     st.markdown("### Generated task commands")
     try:
@@ -1675,27 +2245,61 @@ def _tab_experiment_suite(cfg: dict, df: pd.DataFrame, analyses, runs) -> None:
 
     st.markdown("### Suite control")
     st.code(_shell_command(run_args), language="bash")
-    cols = st.columns(4)
+    suite_alive, suite_pid = _suite_runner_alive(state_path)
+    if suite_alive:
+        st.info(f"Suite runner is active (pid={suite_pid}). Stop it before starting a new run.")
+    if is_augmentation_draft and not augmentation_state_ready:
+        st.warning("Build the augmented suite state before running so completed base tasks are carried over.")
+    cols = st.columns(5)
     if cols[0].button("Save config", width="stretch", disabled=preview.empty):
         save_suite_config(config_path, config)
         st.success(f"Saved {config_path}")
-    if cols[1].button("Run / resume suite", type="primary", width="stretch", disabled=preview.empty):
+    if cols[1].button(
+        "Build augmented suite state",
+        width="stretch",
+        disabled=preview.empty or not is_augmentation_draft,
+    ):
+        save_suite_config(config_path, config)
+        source_state_path = Path(str(augmentation_source_path))
+        source_state = load_suite_state(source_state_path)
+        augmented_state = build_augmented_suite_state(
+            config,
+            source_state,
+            config_path=str(config_path.resolve()),
+            log_path=str(state_path.with_suffix(".log")),
+            source_state_path=str(source_state_path.resolve()),
+        )
+        save_suite_state(state_path, augmented_state)
+        st.success(f"Built augmented suite state at {state_path}")
+        st.rerun()
+    if cols[2].button(
+        "Run / resume suite",
+        type="primary",
+        width="stretch",
+        disabled=preview.empty or suite_alive or (is_augmentation_draft and not augmentation_state_ready),
+    ):
         save_suite_config(config_path, config)
         pid = _start_background_subprocess(run_args, launcher_log_path)
         st.success(f"Started suite process pid={pid}.")
         st.rerun()
-    if cols[2].button("Cancel suite", width="stretch", disabled=not state_path.exists()):
+    if cols[3].button("Cancel suite", width="stretch", disabled=not state_path.exists()):
         result = subprocess.run(cancel_args, capture_output=True, text=True, check=False)
         if result.returncode == 0:
             st.warning("Cancellation requested.")
         else:
             st.error(result.stderr or result.stdout or f"Cancel failed with {result.returncode}")
-    if cols[3].button("Refresh suite status", width="stretch"):
+    if cols[4].button("Refresh suite status", width="stretch"):
+        st.cache_data.clear()
         st.rerun()
 
     st.caption(f"Config: `{config_path}`")
     st.caption(f"State: `{state_path}`")
     _render_suite_progress(state_path, df, analyses, runs)
+
+    suite_log_path = state_path.with_suffix(".log")
+    if suite_log_path.exists():
+        with st.expander("Suite task output", expanded=False):
+            st.code(suite_log_path.read_text(encoding="utf-8")[-12000:], language="text")
 
     if launcher_log_path.exists():
         with st.expander("Suite launcher output", expanded=False):
@@ -1816,6 +2420,14 @@ def _render_run_experiment_form(cfg: dict) -> None:
         dry_run=dry_run,
     )
     _render_shell_command_preview(_shell_command(args))
+    _render_direct_system_invocation_preview(
+        system=system,
+        corpus=corpus,
+        model=model,
+        selected_ids=selected_ids,
+        available_ids=available_ids,
+        questions_meta=questions_meta,
+    )
 
     cols = st.columns([3, 1])
     cols[0].caption(
@@ -1898,26 +2510,93 @@ def _tab_actions(cfg: dict, filtered: pd.DataFrame, analyses, runs) -> None:
             )
             analysis_name = st.text_input("Analysis run name", value=default_analysis_name)
             suite_resume = st.checkbox("Resume suite analysis (skip cached)", value=True)
+            carried_over_result_files = _carried_over_result_files_from_suite_state(selected_state)
             st.caption(f"{len(result_files)} result file(s) found for selected suite state.")
             analysis_output_dir, analysis_state_path, analysis_log_path = _analysis_job_paths(
                 cfg["analysis_dir"],
                 analysis_name,
             )
             analysis_name_exists = analysis_output_dir.exists()
-            if analysis_name_exists:
+            existing_analysis_state = analysis_state_path.exists()
+            existing_analysis_matches = False
+            if existing_analysis_state:
+                try:
+                    existing_state = load_analysis_job_state(analysis_state_path)
+                    existing_analysis_matches = (
+                        existing_state.suite_state_path is not None
+                        and Path(existing_state.suite_state_path).resolve() == selected_state.resolve()
+                    )
+                except Exception:
+                    existing_analysis_matches = False
+            analysis_name_conflict = analysis_name_exists and not existing_analysis_matches
+            if analysis_name_conflict:
                 st.warning(
                     "This analysis run name already exists in the result archive. "
                     "Choose a unique name before running analysis to avoid mixing new results with archived data."
                 )
+            base_analysis_dirs = _analysis_result_dirs(cfg["analysis_dir"])
+            base_analysis_dir = st.selectbox(
+                "Base analysis to augment",
+                [None, *base_analysis_dirs],
+                format_func=lambda p: "none" if p is None else p.name,
+            )
+            base_analysis_state_path = (
+                cfg["analysis_dir"] / f"{base_analysis_dir.name}.state.json"
+                if base_analysis_dir is not None
+                else None
+            )
+            base_analysis_source_path = (
+                base_analysis_state_path
+                if base_analysis_state_path is not None and base_analysis_state_path.is_file()
+                else base_analysis_dir
+            )
             run_args = _build_analysis_job_run_args(str(analysis_state_path))
             cancel_args = _build_analysis_job_cancel_args(str(analysis_state_path))
             st.code(_shell_command(run_args), language="bash")
 
-            if st.button(
+            cols = st.columns(2)
+            if cols[0].button(
+                    "Augment selected analysis",
+                    width="stretch",
+                    disabled=(
+                        not result_files
+                        or not analysis_name.strip()
+                        or base_analysis_dir is None
+                        or analysis_name_conflict
+                    ),
+            ):
+                copied = copy_matching_analysis_outputs(
+                    source_output_dir=base_analysis_dir,
+                    target_output_dir=analysis_output_dir,
+                    input_files=carried_over_result_files,
+                )
+                state = build_analysis_job_state(
+                    job_name=analysis_name,
+                    experiment_results_dir=str(cfg["experiment_dir"]),
+                    output_dir=str(analysis_output_dir),
+                    path_to_corpora=cfg["corpora_root"],
+                    examiner_model=cfg["examiner_model"],
+                    num_ctx=cfg["num_ctx"],
+                    input_files=result_files,
+                    resume=True,
+                    log_path=str(analysis_log_path),
+                    suite_id=selected_suite_state.suite_id,
+                    suite_name=selected_suite_state.suite_name,
+                    suite_config_path=str(Path(selected_suite_config_path).resolve()),
+                    suite_state_path=str(selected_state.resolve()),
+                    augmented_from_state_path=str(Path(base_analysis_source_path).resolve()),
+                )
+                save_analysis_job_state(analysis_state_path, state)
+                st.success(f"Prepared augmented analysis and copied {len(copied)} file(s).")
+                st.rerun()
+
+            if cols[1].button(
                     "▶ Run / resume suite analysis",
                     type="primary",
                     width="stretch",
-                    disabled=not result_files or not analysis_name.strip() or analysis_name_exists,
+                    disabled=not result_files
+                    or not analysis_name.strip()
+                    or analysis_name_conflict,
             ):
                 state = build_analysis_job_state(
                     job_name=analysis_name,
@@ -1933,6 +2612,9 @@ def _tab_actions(cfg: dict, filtered: pd.DataFrame, analyses, runs) -> None:
                     suite_name=selected_suite_state.suite_name,
                     suite_config_path=str(Path(selected_suite_config_path).resolve()),
                     suite_state_path=str(selected_state.resolve()),
+                    augmented_from_state_path=(
+                        str(Path(base_analysis_source_path).resolve()) if base_analysis_source_path else None
+                    ),
                 )
                 save_analysis_job_state(analysis_state_path, state)
                 pid = _start_background_subprocess(run_args, analysis_log_path)

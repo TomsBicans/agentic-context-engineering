@@ -33,6 +33,7 @@ class RunResult(BaseModel):
     corpus: Corpus
     question_id: str
     question_text: str
+    expected_facts: list[str] = Field(default_factory=list)
 
     # --- Run configuration (nominal scale) ---
     model: str

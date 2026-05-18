@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pandas as pd
 
 from result_processor.tests.conftest import analysis_result, run_payload, write_jsonl
 from result_processor.visualization.loader import build_dataframe, build_dataframe_for_files, load_analyses, load_runs
 from result_processor.visualization.pipeline import visualize_results
-from result_processor.visualization.plots import ALL_PLOTS
+from result_processor.visualization.plots import ALL_PLOTS, CHARTS
 from result_processor.visualization.tables import ALL_TABLES
 
 
@@ -43,6 +46,10 @@ def test_loader_joins_runs_and_analyses_with_dates_and_levels(tmp_path) -> None:
     assert "run_date" in df.columns
     assert str(df.loc[df["run_id"] == "r1", "run_date"].iloc[0]).endswith("UTC")
     assert df.loc[df["run_id"] == "r1", "support_rate"].iloc[0] == 1.0
+    assert df.loc[df["run_id"] == "r1", "exact_match"].iloc[0] == 1.0
+    assert df.loc[df["run_id"] == "r1", "f1"].iloc[0] == 1.0
+    assert df.loc[df["run_id"] == "r1", "precision"].iloc[0] == 1.0
+    assert df.loc[df["run_id"] == "r1", "recall"].iloc[0] == 1.0
     assert pd.isna(df.loc[df["run_id"] == "r2", "support_rate"].iloc[0])
     assert df.loc[df["run_id"] == "r1", "analysis_time_s"].iloc[0] == 1.25
     assert pd.isna(df.loc[df["run_id"] == "r2", "analysis_time_s"].iloc[0])
@@ -73,6 +80,52 @@ def test_plot_builders_return_figures_for_populated_and_empty_inputs(tmp_path) -
         assert hasattr(fig, "to_dict")
 
 
+def test_system_color_mapping_is_distinct_and_stable_across_charts() -> None:
+    df = pd.DataFrame(
+        [
+            {
+                "system_name": "chatgpt_codex",
+                "model": "qwen3:4b",
+                "corpus": "solar_system_wiki",
+                "question_id": "q1",
+                "answer_char_count": 100,
+                "execution_time_s": 10,
+                "support_rate": 0.1,
+            },
+            {
+                "system_name": "ace",
+                "model": "qwen3:4b",
+                "corpus": "solar_system_wiki",
+                "question_id": "q2",
+                "answer_char_count": 200,
+                "execution_time_s": 20,
+                "support_rate": 0.2,
+            },
+            {
+                "system_name": "anythingllm",
+                "model": "qwen3:4b",
+                "corpus": "solar_system_wiki",
+                "question_id": "q3",
+                "answer_char_count": 300,
+                "execution_time_s": 30,
+                "support_rate": 0.3,
+            },
+        ]
+    )
+
+    answer_fig = ALL_PLOTS["answer_chars_by_model_system"](df)
+    time_fig = ALL_PLOTS["execution_time_by_model_system"](df)
+    support_fig = ALL_PLOTS["support_by_system"](df)
+
+    answer_colors = {trace.name: trace.marker.color for trace in answer_fig.data}
+    time_colors = {trace.name: trace.marker.color for trace in time_fig.data}
+    support_colors = {trace.name: trace.marker.color for trace in support_fig.data}
+    assert len(set(answer_colors.values())) == 3
+    assert answer_colors == time_colors
+    assert answer_colors == support_colors
+    assert support_fig.layout.showlegend is False
+
+
 def test_table_builders_return_latex_for_analyzed_data_and_empty_for_missing_metrics(tmp_path) -> None:
     experiment_dir, analysis_dir = _write_result_files(tmp_path)
     df = build_dataframe(experiment_dir, analysis_dir)
@@ -84,19 +137,86 @@ def test_table_builders_return_latex_for_analyzed_data_and_empty_for_missing_met
         assert builder(empty_metrics) == ""
 
 
-def test_visualize_results_writes_html_plots_and_latex_tables(tmp_path) -> None:
+def test_visualize_results_writes_prefixed_html_pdf_manifest_and_latex_tables(tmp_path, monkeypatch) -> None:
+    def fake_write_image(_fig, file, *args, **kwargs) -> None:
+        if hasattr(file, "write"):
+            file.write(b"%PDF-1.4\n")
+            return
+        Path(file).write_bytes(b"%PDF-1.4\n")
+
+    monkeypatch.setattr("plotly.graph_objects.Figure.write_image", fake_write_image)
     experiment_dir, analysis_dir = _write_result_files(tmp_path)
     out_dir = tmp_path / "figures"
 
     visualize_results(str(experiment_dir), str(analysis_dir), str(out_dir), formats=["html"])
 
-    assert (out_dir / "plots" / "support_by_system.html").is_file()
-    assert (out_dir / "plots" / "verdict_breakdown.html").is_file()
-    assert (out_dir / "plots" / "time_vs_answer_chars.html").is_file()
-    assert (out_dir / "plots" / "error_rate_by_system.html").is_file()
-    assert (out_dir / "plots" / "analysis_time_by_system.html").is_file()
-    assert (out_dir / "plots" / "analysis_time_by_examiner.html").is_file()
-    assert (out_dir / "plots" / "analysis_time_vs_claims.html").is_file()
-    assert (out_dir / "plots" / "analysis_time_vs_answer_chars.html").is_file()
-    assert (out_dir / "plots" / "execution_time_vs_analysis_time.html").is_file()
+    assert (out_dir / "plots" / "C01_support_by_system.html").is_file()
+    assert (out_dir / "plots" / "C01_support_by_system.pdf").is_file()
+    assert (out_dir / "plots" / "C05_time_vs_answer_chars.html").is_file()
+    assert (out_dir / "plots" / "C11_error_rate_by_system.pdf").is_file()
+    assert (out_dir / "plots" / "C19_execution_time_vs_analysis_time.html").is_file()
+    assert (out_dir / "plots" / "C20_answer_chars_by_model_system.html").is_file()
+    assert (out_dir / "plots" / "C26_time_vs_answer_chars_by_system.pdf").is_file()
+    assert (out_dir / "plots" / "C27_support_by_level_model_system.html").is_file()
+    assert (out_dir / "plots" / "C28_support_by_model_system_level.pdf").is_file()
+    assert (out_dir / "plots" / "C29_execution_time_by_level_model_system.html").is_file()
+    assert (out_dir / "plots" / "C30_answer_chars_by_level_model_system.pdf").is_file()
+    manifest = json.loads((out_dir / "charts_manifest.json").read_text(encoding="utf-8"))
+    assert len(manifest) == len(CHARTS) == 30
+    assert manifest[0] == {
+        "id": "C01",
+        "slug": "support_by_system",
+        "lv_title": "Vidējais atbalsta īpatsvars pa sistēmām",
+        "html_file": "C01_support_by_system.html",
+        "pdf_file": "C01_support_by_system.pdf",
+        "latex_label": "fig:c01-support-by-system",
+    }
+    assert manifest[19] == {
+        "id": "C20",
+        "slug": "answer_chars_by_model_system",
+        "lv_title": "Gala atbildes garuma sadalījums pa A1 modeli un sistēmu",
+        "html_file": "C20_answer_chars_by_model_system.html",
+        "pdf_file": "C20_answer_chars_by_model_system.pdf",
+        "latex_label": "fig:c20-answer-chars-by-model-system",
+    }
+    assert manifest[25] == {
+        "id": "C26",
+        "slug": "time_vs_answer_chars_by_system",
+        "lv_title": "Izpildes laiks pret gala atbildes garumu pa sistēmām",
+        "html_file": "C26_time_vs_answer_chars_by_system.html",
+        "pdf_file": "C26_time_vs_answer_chars_by_system.pdf",
+        "latex_label": "fig:c26-time-vs-answer-chars-by-system",
+    }
+    assert manifest[26] == {
+        "id": "C27",
+        "slug": "support_by_level_model_system",
+        "lv_title": "Atbalsta īpatsvars pa sarežģītības līmeni, A1 modeli un sistēmu",
+        "html_file": "C27_support_by_level_model_system.html",
+        "pdf_file": "C27_support_by_level_model_system.pdf",
+        "latex_label": "fig:c27-support-by-level-model-system",
+    }
+    assert manifest[27] == {
+        "id": "C28",
+        "slug": "support_by_model_system_level",
+        "lv_title": "Atbalsta īpatsvars pa A1 modeli, sistēmu un sarežģītības līmeni",
+        "html_file": "C28_support_by_model_system_level.html",
+        "pdf_file": "C28_support_by_model_system_level.pdf",
+        "latex_label": "fig:c28-support-by-model-system-level",
+    }
+    assert manifest[28] == {
+        "id": "C29",
+        "slug": "execution_time_by_level_model_system",
+        "lv_title": "Izpildes laiks pa sarežģītības līmeni, A1 modeli un sistēmu",
+        "html_file": "C29_execution_time_by_level_model_system.html",
+        "pdf_file": "C29_execution_time_by_level_model_system.pdf",
+        "latex_label": "fig:c29-execution-time-by-level-model-system",
+    }
+    assert manifest[29] == {
+        "id": "C30",
+        "slug": "answer_chars_by_level_model_system",
+        "lv_title": "Gala atbildes garums pa sarežģītības līmeni, A1 modeli un sistēmu",
+        "html_file": "C30_answer_chars_by_level_model_system.html",
+        "pdf_file": "C30_answer_chars_by_level_model_system.pdf",
+        "latex_label": "fig:c30-answer-chars-by-level-model-system",
+    }
     assert (out_dir / "tables" / "per_system_summary.tex").is_file()

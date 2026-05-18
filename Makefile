@@ -32,21 +32,22 @@ install_dependencies:
 i:
 	make install_dependencies
 
-run_tests:
-	uv run --package agent ${PYTHON} -m pytest -q
+test_agent:
+	uv run --package agent ${PYTHON} -m pytest packages/agent/src/agent/tests/ -v
 
 test_cli:
 	uv run --package cli ${PYTHON} -m pytest packages/cli/src/cli/tests/ -v
 
-test_agent:
-	uv run --package agent ${PYTHON} -m pytest -v
+test_experiment_runner:
+	uv run --package experiment_runner ${PYTHON} -m pytest packages/experiment_runner/src/experiment_runner/tests/ -v
 
 test_result_processor:
 	uv run --package result-processor ${PYTHON} -m pytest packages/result_processor/src/result_processor/tests/ -v
 
 test_all:
-	uv run --package agent ${PYTHON} -m pytest -v
+	uv run --package agent ${PYTHON} -m pytest packages/agent/src/agent/tests/ -v
 	uv run --package cli ${PYTHON} -m pytest packages/cli/src/cli/tests/ -v
+	uv run --package experiment_runner ${PYTHON} -m pytest packages/experiment_runner/src/experiment_runner/tests/ -v
 	uv run --package result-processor ${PYTHON} -m pytest packages/result_processor/src/result_processor/tests/ -v
 
 install_tools:

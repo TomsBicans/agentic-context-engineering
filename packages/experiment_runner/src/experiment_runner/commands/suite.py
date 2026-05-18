@@ -3,8 +3,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import selectors
+import signal
 import subprocess
 import sys
+import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
@@ -22,6 +26,8 @@ from experiment_runner.models.suite import (
 from experiment_runner.runners.registry import DISABLED_SYSTEMS, SYSTEM_AUTOMATION_LEVELS
 
 
+TASK_HEARTBEAT_INTERVAL_S = 30.0
+
 
 
 def load_suite_config(path: str | Path) -> ExperimentSuiteConfig:
@@ -31,7 +37,7 @@ def load_suite_config(path: str | Path) -> ExperimentSuiteConfig:
 def save_suite_config(path: str | Path, config: ExperimentSuiteConfig) -> None:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(config.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    _atomic_write_text(out, config.model_dump_json(indent=2) + "\n")
 
 
 def load_suite_state(path: str | Path) -> ExperimentSuiteState:
@@ -42,7 +48,32 @@ def save_suite_state(path: str | Path, state: ExperimentSuiteState) -> None:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     state.updated_at = datetime.now(timezone.utc)
-    out.write_text(state.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    _atomic_write_text(out, state.model_dump_json(indent=2) + "\n")
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    tmp_name: str | None = None
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as tmp:
+        tmp_name = tmp.name
+        tmp.write(text)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+    try:
+        os.replace(tmp_name, path)
+    except Exception:
+        if tmp_name:
+            try:
+                Path(tmp_name).unlink()
+            except OSError:
+                pass
+        raise
 
 
 def validate_suite_config(config: ExperimentSuiteConfig) -> None:
@@ -130,7 +161,7 @@ def _selected_questions(selection, questions: list[Question]) -> list[Question]:
 
 def build_suite_tasks(config: ExperimentSuiteConfig) -> list[SuiteTask]:
     validate_suite_config(config)
-    raw_tasks: list[tuple[int, int, int, str, int, SuiteTask]] = []
+    raw_tasks: list[tuple[int, int, int, int, str, SuiteTask]] = []
 
     for corpus_index, selection in enumerate(config.corpora):
         questions = _selected_questions(selection, load_questions(selection.questions_file, None))
@@ -168,9 +199,9 @@ def build_suite_tasks(config: ExperimentSuiteConfig) -> list[SuiteTask]:
                     raw_tasks.append((
                         model_index,
                         corpus_index,
+                        system_index,
                         question.level,
                         question.id,
-                        system_index,
                         task,
                     ))
 
@@ -196,18 +227,28 @@ def build_suite_state(
 
 
 def reconcile_suite_state(config: ExperimentSuiteConfig, state: ExperimentSuiteState) -> ExperimentSuiteState:
-    existing = {task.task_id: task for task in state.tasks}
+    planned_by_id = {task.task_id: task for task in build_suite_tasks(config)}
     tasks: list[SuiteTask] = []
-    for planned in build_suite_tasks(config):
-        previous = existing.get(planned.task_id)
-        if previous is not None:
-            planned.status = previous.status
-            planned.result_path = previous.result_path
-            planned.error = previous.error
-            planned.started_at = previous.started_at
-            planned.finished_at = previous.finished_at
-            planned.return_code = previous.return_code
+    for previous in state.tasks:
+        planned = planned_by_id.pop(previous.task_id, None)
+        if planned is None:
+            continue
+        # Keep persisted suite order stable on resume. Newly-created suites use
+        # the current planner order; existing state files keep their saved order.
+        planned.index = previous.index
+        planned.status = previous.status
+        planned.result_path = previous.result_path
+        planned.error = previous.error
+        planned.started_at = previous.started_at
+        planned.last_heartbeat_at = previous.last_heartbeat_at
+        planned.finished_at = previous.finished_at
+        planned.return_code = previous.return_code
         tasks.append(planned)
+    for planned in planned_by_id.values():
+        planned.index = len(tasks) + 1
+        tasks.append(planned)
+    for index, task in enumerate(tasks, 1):
+        task.index = index
     state.tasks = tasks
     return state
 
@@ -236,7 +277,80 @@ def _result_path_from_output(lines: Iterable[str]) -> str | None:
 
 
 def _task_result_exists(task: SuiteTask) -> bool:
-    return bool(task.result_path and Path(task.result_path).is_file())
+    return bool(
+        task.result_path
+        and Path(task.result_path).is_file()
+        and Path(task.result_path).stat().st_size > 0
+    )
+
+
+def build_augmented_suite_state(
+    config: ExperimentSuiteConfig,
+    source_state: ExperimentSuiteState,
+    *,
+    config_path: str | None = None,
+    log_path: str | None = None,
+    source_state_path: str | None = None,
+) -> ExperimentSuiteState:
+    source_by_id = {task.task_id: task for task in source_state.tasks}
+    tasks = build_suite_tasks(config)
+    for task in tasks:
+        previous = source_by_id.get(task.task_id)
+        if (
+            previous is None
+            or previous.status != SuiteTaskStatus.SUCCEEDED
+            or not _task_result_exists(previous)
+        ):
+            continue
+        task.status = SuiteTaskStatus.SUCCEEDED
+        task.result_path = previous.result_path
+        task.started_at = previous.started_at
+        task.last_heartbeat_at = previous.last_heartbeat_at
+        task.finished_at = previous.finished_at
+        task.return_code = previous.return_code
+
+    augmented_from = list(source_state.augmented_from_state_paths)
+    if source_state_path:
+        resolved_source = str(Path(source_state_path).resolve())
+        if resolved_source not in augmented_from:
+            augmented_from.append(resolved_source)
+    return ExperimentSuiteState(
+        suite_id=config.suite_id,
+        suite_name=config.name,
+        config_path=config_path,
+        augmented_from_state_paths=augmented_from,
+        log_path=log_path,
+        tasks=tasks,
+    )
+
+
+def _is_pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _terminate_process_tree(process: subprocess.Popen, *, grace_s: float = 5.0) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except OSError:
+        process.terminate()
+    try:
+        process.wait(timeout=grace_s)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            process.kill()
+        process.wait()
 
 
 def run_suite(
@@ -248,10 +362,21 @@ def run_suite(
     path = Path(state_path)
     if path.exists():
         state = reconcile_suite_state(config, load_suite_state(path))
+        if state.runner_pid is not None and _is_pid_alive(state.runner_pid):
+            raise RuntimeError(
+                f"Suite runner is already active (pid={state.runner_pid}). "
+                "Stop the existing process before starting a new run."
+            )
+        # Reset tasks orphaned in RUNNING state by a crashed/killed runner.
+        for task in state.tasks:
+            if task.status == SuiteTaskStatus.RUNNING:
+                task.status = SuiteTaskStatus.PENDING
     else:
         log_path = str(path.with_suffix(".log"))
         state = build_suite_state(config, config_path=config_path, log_path=log_path)
     state.cancel_requested = False
+    state.runner_pid = os.getpid()
+    state.active_pid = None
     save_suite_state(path, state)
 
     log_path = Path(state.log_path or path.with_suffix(".log"))
@@ -270,6 +395,7 @@ def run_suite(
 
             task.status = SuiteTaskStatus.RUNNING
             task.started_at = datetime.now(timezone.utc)
+            task.last_heartbeat_at = task.started_at
             task.finished_at = None
             task.error = None
             task.return_code = None
@@ -284,44 +410,120 @@ def run_suite(
                 task.command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
+                bufsize=0,
                 env=env,
+                start_new_session=True,
             )
             state.active_pid = process.pid
             save_suite_state(path, state)
+            log.write(f"started pid={process.pid} timeout={config.task_timeout_s}s\n")
+            log.flush()
 
             lines: list[str] = []
             assert process.stdout is not None
-            for line in process.stdout:
-                line = line.rstrip("\n")
-                lines.append(line)
-                log.write(line + "\n")
-                log.flush()
+            stdout_fd = process.stdout.fileno()
+            os.set_blocking(stdout_fd, False)
+            pending_output = b""
+
+            def drain_stdout() -> bool:
+                nonlocal pending_output
+                saw_eof = False
+                while True:
+                    try:
+                        chunk = os.read(stdout_fd, 8192)
+                    except BlockingIOError:
+                        break
+                    if not chunk:
+                        saw_eof = True
+                        break
+                    pending_output += chunk
+                    while b"\n" in pending_output:
+                        raw_line, pending_output = pending_output.split(b"\n", 1)
+                        line = raw_line.decode("utf-8", errors="replace").rstrip("\r")
+                        if not line:
+                            continue
+                        lines.append(line)
+                        log.write(line + "\n")
+                        log.flush()
+                return saw_eof
+
+            timed_out = False
+            started_monotonic = time.monotonic()
+            deadline = started_monotonic + max(config.task_timeout_s, 1)
+            next_heartbeat = started_monotonic + TASK_HEARTBEAT_INTERVAL_S
+            selector = selectors.DefaultSelector()
+            selector.register(process.stdout, selectors.EVENT_READ)
+            while process.poll() is None:
+                for _, _ in selector.select(timeout=0.5):
+                    drain_stdout()
 
                 current = load_suite_state(path)
-                if current.cancel_requested and process.poll() is None:
-                    process.terminate()
+                if current.cancel_requested:
+                    _terminate_process_tree(process)
+                    break
+                now = time.monotonic()
+                if now >= deadline:
+                    timed_out = True
+                    log.write(f"task timed out after {config.task_timeout_s}s\n")
+                    log.flush()
+                    _terminate_process_tree(process)
+                    break
+                if now >= next_heartbeat:
+                    elapsed = int(now - started_monotonic)
+                    remaining = max(int(deadline - now), 0)
+                    log.write(
+                        f"task still running pid={process.pid} elapsed={elapsed}s "
+                        f"timeout_in={remaining}s\n"
+                    )
+                    log.flush()
+                    heartbeat_state = load_suite_state(path)
+                    heartbeat_task = heartbeat_state.tasks[task.index - 1]
+                    if heartbeat_task.task_id == task.task_id:
+                        heartbeat_task.last_heartbeat_at = datetime.now(timezone.utc)
+                        heartbeat_state.active_pid = process.pid
+                        save_suite_state(path, heartbeat_state)
+                    next_heartbeat = now + TASK_HEARTBEAT_INTERVAL_S
 
+            selector.close()
             rc = process.wait()
+            drain_stdout()
+            if pending_output:
+                line = pending_output.decode("utf-8", errors="replace").rstrip("\r")
+                if line:
+                    lines.append(line)
+                    log.write(line + "\n")
+                    log.flush()
+                pending_output = b""
             state = load_suite_state(path)
             task = state.tasks[task.index - 1]
             task.return_code = rc
             task.finished_at = datetime.now(timezone.utc)
-            task.result_path = _result_path_from_output(lines) or task.result_path
+            reported_result_path = _result_path_from_output(lines)
+            task.result_path = reported_result_path or task.result_path
             state.active_pid = None
+            elapsed = int(time.monotonic() - started_monotonic)
+            log.write(f"finished pid={process.pid} rc={rc} elapsed={elapsed}s\n")
+            log.flush()
 
             if state.cancel_requested:
                 task.status = SuiteTaskStatus.CANCELLED
                 task.error = "Suite cancellation requested."
+            elif timed_out:
+                task.status = SuiteTaskStatus.FAILED
+                task.error = f"Task timed out after {config.task_timeout_s}s"
             elif rc == 0:
-                task.status = SuiteTaskStatus.SUCCEEDED
+                if reported_result_path and _task_result_exists(task):
+                    task.status = SuiteTaskStatus.SUCCEEDED
+                else:
+                    task.status = SuiteTaskStatus.FAILED
+                    task.error = "Command exited successfully but did not report a non-empty result file."
             else:
                 task.status = SuiteTaskStatus.FAILED
                 task.error = "\n".join(lines[-20:]) or f"Command exited with {rc}"
             save_suite_state(path, state)
 
     state = load_suite_state(path)
+    state.runner_pid = None
     state.active_pid = None
     save_suite_state(path, state)
     return state
