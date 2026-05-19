@@ -908,3 +908,182 @@ def test_dashboard_command_sets_env_and_streamlit_argv(monkeypatch, tmp_path) ->
     assert os.environ["RP_ANALYSIS_RESULTS_DIR"].endswith("analysis")
     assert called["argv"][:2] == ["streamlit", "run"]
     assert "--server.port" in called["argv"]
+
+
+# ---------------------------------------------------------------------------
+# Import archive
+# ---------------------------------------------------------------------------
+
+def _make_export_zip(
+    tmp_path: Path,
+    *,
+    original_data_root: str,
+    suite_name: str = "my-suite",
+    slug: str = "my-slug",
+    jsonl_content: str = '{"run_id": "r1"}\n',
+    analysis_content: str = '{"analysis": true}\n',
+) -> bytes:
+    """Build a minimal export zip that mirrors the structure produced by the dashboard."""
+    import io as _io
+    import zipfile as _zip
+
+    manifest = {
+        "suite": {
+            "suite_name": suite_name,
+            "state_path": f"{original_data_root}/experiment_suites/{suite_name}.state.json",
+            "config_path": f"{original_data_root}/experiment_suites/{suite_name}.json",
+        },
+        "analyses": [
+            {
+                "analysis_name": f"{slug}-analysis",
+                "analysis_dir": f"{original_data_root}/analysis_results/{slug}-analysis",
+                "metadata": {
+                    "experiment_results_dir": f"{original_data_root}/experiment_results",
+                    "input_files": [f"{original_data_root}/experiment_results/run.jsonl"],
+                },
+            }
+        ],
+    }
+    suite_state = {
+        "suite_id": "abc",
+        "suite_name": suite_name,
+        "config_path": f"{original_data_root}/experiment_suites/{suite_name}.json",
+        "result_files": [f"{original_data_root}/experiment_results/run.jsonl"],
+    }
+    analysis_meta = {
+        "analysis_output_dir": f"{original_data_root}/analysis_results/{slug}-analysis",
+        "experiment_results_dir": f"{original_data_root}/experiment_results",
+    }
+
+    buf = _io.BytesIO()
+    with _zip.ZipFile(buf, "w") as zf:
+        zf.writestr("manifest.json", json.dumps(manifest))
+        zf.writestr(f"experiment_data/{slug}/run.jsonl", jsonl_content)
+        zf.writestr(f"analysis_results/{slug}-analysis/run.jsonl", analysis_content)
+        zf.writestr(f"analysis_results/{slug}-analysis/analysis.meta.json", json.dumps(analysis_meta))
+        zf.writestr(f"suite/{suite_name}.state.json", json.dumps(suite_state))
+        zf.writestr(f"suite/{suite_name}.json", json.dumps({"suite_name": suite_name}))
+        # Charts and tables should be ignored
+        zf.writestr("charts/C01.html", "<html/>")
+        zf.writestr("tables/results.csv", "col\n1\n")
+    buf.seek(0)
+    return buf.read()
+
+
+def test_detect_original_data_root_reads_experiment_results_dir() -> None:
+    manifest = {
+        "analyses": [
+            {"metadata": {"experiment_results_dir": "/old/machine/data/experiment_results"}}
+        ]
+    }
+    assert ui._detect_original_data_root(manifest) == "/old/machine/data"
+
+
+def test_detect_original_data_root_falls_back_to_suite_state_path() -> None:
+    manifest = {
+        "suite": {"state_path": "/old/machine/data/experiment_suites/my.state.json"},
+        "analyses": [],
+    }
+    assert ui._detect_original_data_root(manifest) == "/old/machine/data"
+
+
+def test_detect_original_data_root_returns_none_for_empty_manifest() -> None:
+    assert ui._detect_original_data_root({}) is None
+
+
+def test_import_export_zip_extracts_files_to_correct_dirs(tmp_path: Path) -> None:
+    original_root = "/old/machine/data"
+    zip_bytes = _make_export_zip(tmp_path, original_data_root=original_root)
+
+    cfg = {
+        "experiment_dir": tmp_path / "experiment_results",
+        "analysis_dir": tmp_path / "analysis_results",
+        "suite_dir": tmp_path / "experiment_suites",
+    }
+    stats = ui._import_export_zip(zip_bytes, cfg)
+
+    assert stats["jsonl"] == 1
+    assert stats["analysis"] == 2  # run.jsonl + analysis.meta.json
+    assert stats["suite"] == 2     # state.json + config.json
+    assert (tmp_path / "experiment_results" / "run.jsonl").is_file()
+    assert (tmp_path / "analysis_results" / "my-slug-analysis" / "run.jsonl").is_file()
+    assert (tmp_path / "experiment_results").is_dir()
+    assert (tmp_path / "experiment_suites").is_dir()
+
+
+def test_import_export_zip_rewrites_absolute_paths_in_json(tmp_path: Path) -> None:
+    original_root = "/old/machine/data"
+    zip_bytes = _make_export_zip(tmp_path, original_data_root=original_root)
+
+    cfg = {
+        "experiment_dir": tmp_path / "experiment_results",
+        "analysis_dir": tmp_path / "analysis_results",
+        "suite_dir": tmp_path / "experiment_suites",
+    }
+    stats = ui._import_export_zip(zip_bytes, cfg)
+
+    assert stats["paths_rewritten"] > 0
+    new_root = str((tmp_path / "experiment_results").parent)
+    meta_text = (tmp_path / "analysis_results" / "my-slug-analysis" / "analysis.meta.json").read_text()
+    assert original_root not in meta_text
+    assert new_root in meta_text
+
+
+def test_import_export_zip_skips_charts_and_tables(tmp_path: Path) -> None:
+    original_root = "/old/machine/data"
+    zip_bytes = _make_export_zip(tmp_path, original_data_root=original_root)
+
+    cfg = {
+        "experiment_dir": tmp_path / "experiment_results",
+        "analysis_dir": tmp_path / "analysis_results",
+        "suite_dir": tmp_path / "experiment_suites",
+    }
+    ui._import_export_zip(zip_bytes, cfg)
+
+    assert not (tmp_path / "charts").exists()
+    assert not (tmp_path / "tables").exists()
+
+
+def test_check_import_conflicts_returns_existing_suite_files(tmp_path: Path) -> None:
+    original_root = "/old/machine/data"
+    zip_bytes = _make_export_zip(tmp_path, original_data_root=original_root)
+
+    suite_dir = tmp_path / "experiment_suites"
+    suite_dir.mkdir()
+    # Pre-create one of the two suite files that the zip contains
+    (suite_dir / "my-suite.state.json").write_text("{}", encoding="utf-8")
+
+    cfg = {
+        "experiment_dir": tmp_path / "experiment_results",
+        "analysis_dir": tmp_path / "analysis_results",
+        "suite_dir": suite_dir,
+    }
+    conflicts = ui._check_import_conflicts(zip_bytes, cfg)
+
+    assert len(conflicts) == 1
+    assert conflicts[0].endswith("my-suite.state.json")
+
+
+def test_check_import_conflicts_empty_when_no_suite_files_exist(tmp_path: Path) -> None:
+    zip_bytes = _make_export_zip(tmp_path, original_data_root="/old/data")
+    cfg = {
+        "experiment_dir": tmp_path / "experiment_results",
+        "analysis_dir": tmp_path / "analysis_results",
+        "suite_dir": tmp_path / "experiment_suites",
+    }
+    assert ui._check_import_conflicts(zip_bytes, cfg) == []
+
+
+def test_import_export_zip_no_path_rewrite_when_same_machine(tmp_path: Path) -> None:
+    # When original root == new root, no JSON rewriting should happen.
+    original_root = str(tmp_path)
+    zip_bytes = _make_export_zip(tmp_path, original_data_root=original_root)
+
+    cfg = {
+        "experiment_dir": tmp_path / "experiment_results",
+        "analysis_dir": tmp_path / "analysis_results",
+        "suite_dir": tmp_path / "experiment_suites",
+    }
+    stats = ui._import_export_zip(zip_bytes, cfg)
+
+    assert stats["paths_rewritten"] == 0

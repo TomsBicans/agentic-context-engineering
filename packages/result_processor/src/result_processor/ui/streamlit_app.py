@@ -2646,6 +2646,9 @@ def _tab_actions(cfg: dict, filtered: pd.DataFrame, analyses, runs) -> None:
                 with st.expander("Analysis job output", expanded=False):
                     st.code(analysis_log_path.read_text(encoding="utf-8")[-8000:], language="text")
 
+    with st.expander("Import archive", expanded=False):
+        _render_import_archive(cfg)
+
     st.divider()
     _render_suite_centric_analysis_results(cfg, runs)
 
@@ -2664,6 +2667,200 @@ def _tab_actions(cfg: dict, filtered: pd.DataFrame, analyses, runs) -> None:
         rc = _run_subprocess(args, "Running visualize")
         if rc == 0:
             st.success(f"Figures written to {output_dir}/")
+
+
+def _detect_original_data_root(manifest: dict) -> str | None:
+    """Return the absolute data root path recorded in an export manifest.
+
+    Reads ``experiment_results_dir`` from the first analysis entry, falling
+    back to the suite state path when that field is absent.
+    """
+    for analysis in manifest.get("analyses", []):
+        path = analysis.get("metadata", {}).get("experiment_results_dir", "")
+        if path and Path(path).is_absolute():
+            return str(Path(path).parent)
+    for key in ("state_path", "config_path"):
+        path = manifest.get("suite", {}).get(key, "")
+        if path and Path(path).is_absolute():
+            # parent = experiment_suites dir, grandparent = data root
+            return str(Path(path).parent.parent)
+    return None
+
+
+def _import_export_zip(zip_bytes: bytes, cfg: dict) -> dict[str, int]:
+    """Extract an export zip into the configured data directories.
+
+    Files are routed based on their top-level directory in the zip:
+    - ``experiment_data/{slug}/{file}.jsonl``  → ``experiment_dir/{file}.jsonl``
+    - ``analysis_results/{slug}/…``            → ``analysis_dir/{slug}/…``
+    - ``suite/{file}``                         → ``suite_dir/{file}``
+
+    Charts and tables are intentionally skipped — they are derived artefacts
+    that can be regenerated from the imported data.
+
+    Absolute paths in JSON files that reference the original machine are
+    rewritten to point to this machine's data root (parent of
+    ``experiment_dir``). Assumes the standard ``data/`` layout.
+
+    Returns counts for ``jsonl``, ``analysis``, ``suite``, and
+    ``paths_rewritten``.
+    """
+    experiment_dir: Path = cfg["experiment_dir"].resolve()
+    analysis_dir: Path = cfg["analysis_dir"].resolve()
+    suite_dir: Path = cfg["suite_dir"].resolve()
+    new_data_root = str(experiment_dir.parent)
+
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        manifest = json.loads(zf.read("manifest.json").decode())
+        original_data_root = _detect_original_data_root(manifest)
+
+        stats: dict[str, int] = {"jsonl": 0, "analysis": 0, "suite": 0, "paths_rewritten": 0}
+
+        for name in zf.namelist():
+            if name == "manifest.json" or name.startswith(("charts/", "tables/")):
+                continue
+
+            content = zf.read(name)
+            target: Path | None = None
+
+            if name.startswith("experiment_data/"):
+                target = experiment_dir / Path(name).name
+                stats["jsonl"] += 1
+            elif name.startswith("analysis_results/"):
+                rel = Path(name).relative_to("analysis_results")
+                target = analysis_dir / rel
+                stats["analysis"] += 1
+            elif name.startswith("suite/"):
+                target = suite_dir / Path(name).name
+                stats["suite"] += 1
+
+            if target is None:
+                continue
+
+            target.parent.mkdir(parents=True, exist_ok=True)
+
+            if (
+                target.suffix == ".json"
+                and original_data_root is not None
+                and original_data_root != new_data_root
+            ):
+                try:
+                    text = content.decode("utf-8")
+                    if original_data_root in text:
+                        text = text.replace(original_data_root, new_data_root)
+                        content = text.encode("utf-8")
+                        stats["paths_rewritten"] += 1
+                except UnicodeDecodeError:
+                    pass
+
+            target.write_bytes(content)
+
+    return stats
+
+
+def _check_import_conflicts(zip_bytes: bytes, cfg: dict) -> list[str]:
+    """Return paths of suite files that already exist and would be overwritten."""
+    suite_dir: Path = cfg["suite_dir"].resolve()
+    conflicts: list[str] = []
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+        for name in zf.namelist():
+            if name.startswith("suite/"):
+                target = suite_dir / Path(name).name
+                if target.is_file():
+                    conflicts.append(str(target))
+    return conflicts
+
+
+def _render_import_archive(cfg: dict) -> None:
+    """UI section for importing an exported results zip archive.
+
+    Two-step flow: select a zip (from data/exports/ or drag-and-drop), review
+    any suite-file conflicts, confirm, then import.
+    """
+    st.markdown(
+        "Import a previously exported results zip. Experiment results, analysis files, "
+        "and suite configs are extracted into the configured data directories. "
+        "Absolute paths in JSON files are rewritten to match this machine."
+    )
+
+    # --- Step 1: source selection ---
+    exports_dir = Path("./data/exports")
+    available_zips = sorted(exports_dir.glob("*.zip")) if exports_dir.exists() else []
+    if available_zips:
+        st.markdown("**Available in `data/exports/`:**")
+        for zip_path in available_zips:
+            size_kb = zip_path.stat().st_size // 1024
+            if st.button(
+                f"Select `{zip_path.name}` ({size_kb} KB)",
+                key=f"import_zip_select_{zip_path.name}",
+                width="stretch",
+            ):
+                st.session_state["_import_zip_bytes"] = zip_path.read_bytes()
+                st.session_state["_import_zip_label"] = zip_path.name
+
+    st.markdown("**Or drag and drop a zip file:**")
+    uploaded = st.file_uploader(
+        "Drop export zip here",
+        type=["zip"],
+        key="import_zip_uploader",
+        label_visibility="collapsed",
+    )
+    # Uploaded file takes priority over a previously quick-selected zip.
+    if uploaded is not None:
+        zip_bytes: bytes | None = uploaded.read()
+        zip_label: str = uploaded.name
+    elif "_import_zip_bytes" in st.session_state:
+        zip_bytes = st.session_state["_import_zip_bytes"]
+        zip_label = st.session_state.get("_import_zip_label", "archive")
+    else:
+        zip_bytes = None
+        zip_label = ""
+
+    if zip_bytes is None:
+        return
+
+    # --- Step 2: conflict check and confirmation ---
+    st.info(f"Selected: `{zip_label}`")
+
+    conflicts = _check_import_conflicts(zip_bytes, cfg)
+    overwrite_confirmed = True
+    if conflicts:
+        names = [Path(p).name for p in conflicts]
+        st.warning(
+            "The following suite file(s) already exist and would be overwritten:\n"
+            + "\n".join(f"- `{n}`" for n in names)
+        )
+        overwrite_confirmed = st.checkbox(
+            "I understand this will overwrite the existing suite files above",
+            key="import_overwrite_confirm",
+        )
+
+    # --- Step 3: import or clear ---
+    cols = st.columns(2)
+    if cols[0].button(
+        "⬇ Import",
+        type="primary",
+        width="stretch",
+        disabled=not overwrite_confirmed,
+    ):
+        try:
+            stats = _import_export_zip(zip_bytes, cfg)
+            st.success(
+                f"Imported {stats['jsonl']} result file(s), "
+                f"{stats['analysis']} analysis file(s), "
+                f"{stats['suite']} suite file(s). "
+                f"Paths rewritten in {stats['paths_rewritten']} JSON file(s)."
+            )
+            st.cache_data.clear()
+            st.session_state.pop("_import_zip_bytes", None)
+            st.session_state.pop("_import_zip_label", None)
+        except Exception as exc:
+            st.error(f"Import failed: {exc}")
+
+    if cols[1].button("✕ Clear selection", width="stretch"):
+        st.session_state.pop("_import_zip_bytes", None)
+        st.session_state.pop("_import_zip_label", None)
+        st.rerun()
 
 
 def _locate_source_file(experiment_dir: Path, run_id: str) -> str | None:
