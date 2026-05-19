@@ -24,23 +24,65 @@ uv sync --all-packages --all-groups
 
 3. Acquire the core datasets
 
-```
-make corpus_scraper_solar_system
-make corpus_scraper_oblivion
-make corpus_scraper_scipy
-```
+   **Option A: download pre-built snapshots from GitHub Releases (faster and deterministic):**
 
-4. Launch the agent sample program
+   ```
+   make download_corpora
+   ```
 
-```
-make agent_test
-```
+   **Option B: scrape from source (takes longer and online content could have changed over time):**
+
+   ```
+   make corpus_scraper_solar_system
+   make corpus_scraper_oblivion
+   make corpus_scraper_scipy
+   ```
+
+4. (optional) Launch the custom `ace` agent sample program
+
+   ```
+   make agent_test
+   ```
+
+5. To run the external baseline benchmark systems (`anythingllm`, `ChatGPT codex`, `Anthropic claude code`, `ClawCode`),
+   you have to set them up on your computer - check the scripts in `./setup` directory. To run the custom `ace`
+   agent, no extra installs on computer are necessary, except the uv environment install command `2.`
+
+6. Launch the experiment runner and results dashboard. It is possible to import the example results found in (
+   `./data/exports` directory in this repository)
+
+   ```
+   make dashboard
+   ```
 
 # Architecture diagrams
 
-High-level PlantUML diagrams for the thesis and project review are stored in `docs/diagrams`.
-Generate the SVG versions with:
+High-level PlantUML diagrams are stored in `docs/diagrams`. Generate them with:
 
 ```
 make diagrams
 ```
+
+### System overview
+
+![System overview](docs/diagrams/generated/svg/system-overview.svg)
+
+### Agent runtime sequence
+
+![Agent runtime sequence](docs/diagrams/generated/svg/agent-runtime-sequence.svg)
+
+### Corpus scraper flow
+
+![Corpus scraper flow](docs/diagrams/generated/svg/corpus-scraper-flow.svg)
+
+### Experiment runner flow
+
+![Experiment runner flow](docs/diagrams/generated/svg/experiment-runner-flow.svg)
+
+### Result processing pipeline
+
+![Result processing pipeline](docs/diagrams/generated/svg/result-processing-pipeline.svg)
+
+### AI coding workflow
+
+![AI coding workflow](docs/diagrams/generated/svg/ai-coding-workflow.svg)
