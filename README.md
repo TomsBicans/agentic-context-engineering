@@ -4,8 +4,8 @@
 
 - Python 3.10+
 - uv, high performance python package manager (https://github.com/astral-sh/uv)
-- Pandoc CLI tool (https://github.com/jgm/pandoc)
-- Ollama (https://github.com/ollama/ollama/releases)
+- Pandoc CLI tool (for corpus scraper `html -> markdown` conversion) (https://github.com/jgm/pandoc)
+- Ollama (for LLM inference) (https://github.com/ollama/ollama/releases)
     - download a model with thinking and tool support `ollama pull {model_name}` (https://ollama.com/)
 - Docker Desktop
     - for running the anythingLLM system (one of the baseline systems)
